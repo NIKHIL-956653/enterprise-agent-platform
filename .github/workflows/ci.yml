@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # GitHub starts these containers before the job and tears them down after.
+    # Same images as docker-compose.yml on purpose — CI must not test a different stack.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: eap
+          POSTGRES_PASSWORD: eap
+          POSTGRES_DB: eap
+        ports:
+          - 5432:5432
+        # Without this, the job starts before Postgres accepts connections and tests flake.
+        options: >-
+          --health-cmd "pg_isready -U eap -d eap"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      APP_ENV: test
+      LOG_LEVEL: WARNING
+      # No .env in CI (it's gitignored). Point at the service containers explicitly.
+      DATABASE_URL: postgresql+asyncpg://eap:eap@localhost:5432/eap
+      REDIS_URL: redis://localhost:6379/0
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format check
+        run: ruff format --check .
+
+      # Schema must be built by migrations, never by create_all(). If a migration is
+      # broken or missing, CI fails here rather than in prod.
+      - name: Migrate
+        run: alembic upgrade head
+
+      - name: Test
+        run: pytest -v
