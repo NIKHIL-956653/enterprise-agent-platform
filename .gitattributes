@@ -1,0 +1,14 @@
+# Normalize every text file to LF inside the repository.
+# Git decides what's text; this stops Windows CRLF from leaking into commits
+# and breaking `ruff format --check` on the Ubuntu CI runner.
+* text=auto eol=lf
+
+# Binary files git must never touch.
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+
+# Keep generated files out of PR diffs — they still get committed,
+# just collapsed by default on GitHub so reviews stay readable.
+*.lock linguist-generated=true
