@@ -1,5 +1,5 @@
 """
-Settings — one object, read once from the environment / .env.
+Settings - one object, read once from the environment / .env.
 
 pydantic-settings validates types at startup, so a bad DATABASE_URL fails loudly at boot
 instead of at the first request. Nothing else in the codebase reads os.environ directly.
@@ -8,7 +8,7 @@ instead of at the first request. Nothing else in the codebase reads os.environ d
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, RedisDsn
+from pydantic import Field, PostgresDsn, RedisDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,12 +22,27 @@ class Settings(BaseSettings):
     database_url: PostgresDsn = Field(default="postgresql+asyncpg://eap:eap@localhost:5432/eap")
     redis_url: RedisDsn = Field(default="redis://localhost:6379/0")
 
+    # Auth (M1). The default is a dev placeholder; production must override it.
+    jwt_secret: str = "dev-only-insecure-secret-replace-in-every-real-environment"
+    jwt_algorithm: str = "HS256"
+    access_token_ttl_minutes: int = 30
+
     # LLM APIs (used from M2)
     google_api_key: str = ""
 
     @property
     def is_prod(self) -> bool:
         return self.app_env == "prod"
+
+    @model_validator(mode="after")
+    def _check_jwt_secret(self) -> "Settings":
+        # HS256 signs with the raw secret, so a short one is brute-forceable offline from a
+        # single captured token - and whoever cracks it can mint a token for any tenant.
+        if len(self.jwt_secret.encode()) < 32:
+            raise ValueError("jwt_secret must be at least 32 bytes")
+        if self.is_prod and self.jwt_secret.startswith("dev-only"):
+            raise ValueError("jwt_secret must be set explicitly in production")
+        return self
 
 
 @lru_cache
