@@ -12,4 +12,6 @@ build/
 htmlcov/
 .coverage
 data/
-*.log
+*.logClaude outputs/
+
+Claude outputs/
