@@ -42,6 +42,9 @@ jobs:
       LOG_LEVEL: WARNING
       # No .env in CI (it's gitignored). Point at the service containers explicitly.
       DATABASE_URL: postgresql+asyncpg://eap:eap@localhost:5432/eap
+      # The app must run as the restricted role, not the table owner — owners bypass RLS,
+      # so without this the tenant-isolation tests pass for the wrong reason.
+      APP_DATABASE_URL: postgresql+asyncpg://eap_app:eap_app@localhost:5432/eap
       REDIS_URL: redis://localhost:6379/0
 
     steps:
@@ -67,6 +70,11 @@ jobs:
       # broken or missing, CI fails here rather than in prod.
       - name: Migrate
         run: alembic upgrade head
+
+      # Fails if the models and the migrated schema disagree. upgrade head only proves the
+      # migrations apply; this proves they match the code.
+      - name: Check for schema drift
+        run: alembic check
 
       - name: Test
         run: pytest -v
