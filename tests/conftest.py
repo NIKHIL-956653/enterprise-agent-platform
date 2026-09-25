@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from eap.api.health import reset_readiness_cache
 from eap.core.config import get_settings
 from eap.core.db import dispose_engine, dispose_owner_engine
 from eap.main import app
@@ -24,6 +25,7 @@ def _test_env(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
     test to import config would freeze dev settings for the whole session.
     """
     monkeypatch.setenv("APP_ENV", "test")
+    reset_readiness_cache()
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
