@@ -11,7 +11,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from eap.core.config import get_settings
-from eap.core.db import dispose_engine
+from eap.core.db import dispose_engine, dispose_owner_engine
 from eap.main import app
 
 
@@ -41,6 +41,7 @@ async def _dispose_engine_between_tests() -> AsyncIterator[None]:
     """
     yield
     await dispose_engine()
+    await dispose_owner_engine()
 
 
 @pytest.fixture

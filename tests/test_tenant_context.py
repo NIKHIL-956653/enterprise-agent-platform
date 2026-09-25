@@ -7,7 +7,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 
-from eap.core.db import get_session_factory
+from eap.core.db import get_owner_session_factory
 from eap.core.security import hash_password
 
 PASSWORD = "correct-horse-battery-staple"
@@ -19,7 +19,7 @@ async def logged_in(client: AsyncClient) -> AsyncIterator[dict[str, str]]:
     slug = f"globex-{uuid.uuid4().hex[:8]}"
     email = f"{uuid.uuid4().hex[:8]}@example.com"
 
-    async with get_session_factory()() as s:
+    async with get_owner_session_factory()() as s:
         tenant_id = (
             await s.execute(
                 text(
