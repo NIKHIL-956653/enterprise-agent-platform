@@ -22,7 +22,11 @@ def get_engine() -> AsyncEngine:
     if _engine is None:
         s = get_settings()
         _engine = create_async_engine(
-            str(s.database_url), pool_pre_ping=True, pool_size=10, max_overflow=20, echo=False
+            str(s.app_database_url or s.database_url),
+            pool_pre_ping=True,
+            pool_size=10,
+            max_overflow=20,
+            echo=False,
         )
         _session_factory = async_sessionmaker(_engine, expire_on_commit=False, class_=AsyncSession)
     return _engine
@@ -50,3 +54,31 @@ async def dispose_engine() -> None:
         await _engine.dispose()
         _engine = None
         _session_factory = None
+
+
+# --- owner connection -------------------------------------------------------------------
+# Migrations, seed scripts and test fixtures need to write rows before any tenant context
+# exists. They use the OWNER role, which bypasses RLS. Nothing that serves a request may
+# use this - that is the whole point of the split.
+
+_owner_engine: AsyncEngine | None = None
+_owner_session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+def get_owner_session_factory() -> async_sessionmaker[AsyncSession]:
+    global _owner_engine, _owner_session_factory
+    if _owner_engine is None:
+        _owner_engine = create_async_engine(str(get_settings().database_url), pool_pre_ping=True)
+        _owner_session_factory = async_sessionmaker(
+            _owner_engine, expire_on_commit=False, class_=AsyncSession
+        )
+    assert _owner_session_factory is not None
+    return _owner_session_factory
+
+
+async def dispose_owner_engine() -> None:
+    global _owner_engine, _owner_session_factory
+    if _owner_engine is not None:
+        await _owner_engine.dispose()
+        _owner_engine = None
+        _owner_session_factory = None

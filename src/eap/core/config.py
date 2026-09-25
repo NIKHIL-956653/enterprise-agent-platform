@@ -22,10 +22,19 @@ class Settings(BaseSettings):
     database_url: PostgresDsn = Field(default="postgresql+asyncpg://eap:eap@localhost:5432/eap")
     redis_url: RedisDsn = Field(default="redis://localhost:6379/0")
 
+    # The RUNNING APP connects as a restricted role that owns no tables, so every RLS
+    # policy applies to it. database_url stays the owner, used by migrations and seeds.
+    # Superusers bypass RLS entirely - if the app used database_url, isolation would be
+    # switched off in production while every isolation test still passed.
+    app_database_url: PostgresDsn | None = None
     # Auth (M1). The default is a dev placeholder; production must override it.
     jwt_secret: str = "dev-only-insecure-secret-replace-in-every-real-environment"
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = 30
+
+    # Agents (M2). v1 runs synchronously, so this is also the request's worst case. When
+    # M4 moves runs onto a Redis queue this becomes the worker's budget instead.
+    agent_run_timeout_seconds: int = 60
 
     # LLM APIs (used from M2)
     google_api_key: str = ""

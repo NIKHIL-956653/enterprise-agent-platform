@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from eap.core.config import get_settings
-from eap.core.db import get_session_factory
+from eap.core.db import get_owner_session_factory
 from eap.core.security import hash_password
 
 
@@ -33,7 +33,7 @@ async def two_tenants() -> AsyncIterator[dict[str, str]]:
     a_email, b_email = f"{uuid.uuid4().hex[:8]}@a.test", f"{uuid.uuid4().hex[:8]}@b.test"
     ids = {}
 
-    async with get_session_factory()() as s:
+    async with get_owner_session_factory()() as s:
         for key, slug, email in (("a", a_slug, a_email), ("b", b_slug, b_email)):
             tid = (
                 await s.execute(

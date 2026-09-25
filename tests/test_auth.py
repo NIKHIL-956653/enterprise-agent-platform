@@ -7,7 +7,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 
-from eap.core.db import get_session_factory
+from eap.core.db import get_owner_session_factory
 from eap.core.jwt import decode_access_token
 from eap.core.security import hash_password
 
@@ -20,7 +20,7 @@ async def seeded_tenant() -> AsyncIterator[dict[str, str]]:
     slug = f"acme-{uuid.uuid4().hex[:8]}"
     email = f"{uuid.uuid4().hex[:8]}@example.com"
 
-    async with get_session_factory()() as s:
+    async with get_owner_session_factory()() as s:
         tenant_id = (
             await s.execute(
                 text(
