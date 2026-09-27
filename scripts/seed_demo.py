@@ -41,19 +41,20 @@ async def main() -> None:
             {"tid": tenant_id, "email": EMAIL, "ph": hash_password(PASSWORD)},
         )
 
-        await s.execute(
-            text(
-                "INSERT INTO agents (id, tenant_id, name, display_name) "
-                "VALUES (gen_random_uuid(), :tid, 'echo', 'Echo') "
-                "ON CONFLICT (tenant_id, name) DO NOTHING"
-            ),
-            {"tid": tenant_id},
-        )
+        for name, display in (("echo", "Echo"), ("summarize", "Summarize")):
+            await s.execute(
+                text(
+                    "INSERT INTO agents (id, tenant_id, name, display_name) "
+                    "VALUES (gen_random_uuid(), :tid, :name, :display) "
+                    "ON CONFLICT (tenant_id, name) DO NOTHING"
+                ),
+                {"tid": tenant_id, "name": name, "display": display},
+            )
         await s.commit()
 
     print(f"tenant : {SLUG}  ({tenant_id})")
     print(f"login  : {EMAIL} / {PASSWORD}")
-    print("agents : echo")
+    print("agents : echo, summarize")
     await dispose_owner_engine()
 
 
