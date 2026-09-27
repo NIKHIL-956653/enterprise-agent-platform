@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from eap.agents import AgentContext, AgentError, get_agent
 from eap.core.config import get_settings
 from eap.core.logging import get_logger
+from eap.llm.base import LLM, LLMError
+from eap.llm.gemini import get_llm
 from eap.models.agent import Agent, AgentRun, RunStatus
 
 log = get_logger("eap.agents")
@@ -37,6 +39,17 @@ class InvalidAgentInput(Exception):
         self.errors = errors
 
 
+def _default_llm() -> LLM | None:
+    """
+    The real model when a key is configured, otherwise None. Dev boxes and CI have no key;
+    that must not stop agents that never touch a model (echo) from running.
+    """
+    try:
+        return get_llm()
+    except LLMError:
+        return None
+
+
 async def execute_agent(
     *,
     session: AsyncSession,
@@ -44,6 +57,7 @@ async def execute_agent(
     user_id: UUID | None,
     agent_name: str,
     payload: dict[str, Any],
+    llm: LLM | None = None,
 ) -> AgentRun:
     # No tenant filter: the session already carries app.tenant_id, so RLS scopes this to
     # the caller's tenant. Another tenant's agent row simply does not exist here.
@@ -70,7 +84,13 @@ async def execute_agent(
     session.add(run)
     await session.flush()  # assigns run.id without ending the transaction
 
-    ctx = AgentContext(tenant_id=tenant_id, user_id=user_id, config=agent_row.config or {})
+    ctx = AgentContext(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        config=agent_row.config or {},
+        # Explicitly injected (tests) beats resolved (production). Same call, no fake path.
+        llm=llm if llm is not None else _default_llm(),
+    )
     timeout = get_settings().agent_run_timeout_seconds
     started = time.perf_counter()
 
@@ -82,6 +102,11 @@ async def execute_agent(
     except TimeoutError:
         run.status = RunStatus.TIMED_OUT
         run.error = f"agent exceeded {timeout}s"
+    except LLMError as e:
+        # The model failed, not our code. Expected in the sense that every network call
+        # fails sometimes; safe to show the tenant because LLMError carries no detail.
+        run.status = RunStatus.FAILED
+        run.error = str(e)
     except AgentError as e:
         # An expected failure the agent chose to report. Safe to show the tenant.
         run.status = RunStatus.FAILED

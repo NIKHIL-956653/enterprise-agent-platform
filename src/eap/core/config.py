@@ -38,19 +38,23 @@ class Settings(BaseSettings):
 
     # LLM APIs (used from M2)
     google_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    llm_timeout_seconds: int = 30
 
     @property
     def is_prod(self) -> bool:
         return self.app_env == "prod"
 
     @model_validator(mode="after")
-    def _check_jwt_secret(self) -> "Settings":
+    def _check_secrets(self) -> "Settings":
         # HS256 signs with the raw secret, so a short one is brute-forceable offline from a
         # single captured token - and whoever cracks it can mint a token for any tenant.
         if len(self.jwt_secret.encode()) < 32:
             raise ValueError("jwt_secret must be at least 32 bytes")
         if self.is_prod and self.jwt_secret.startswith("dev-only"):
             raise ValueError("jwt_secret must be set explicitly in production")
+        if self.is_prod and not self.google_api_key:
+            raise ValueError("google_api_key must be set in production")
         return self
 
 

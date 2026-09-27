@@ -18,6 +18,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from eap.llm.base import LLM
+
 
 @dataclass(frozen=True)
 class AgentContext:
@@ -26,6 +28,7 @@ class AgentContext:
     tenant_id: UUID
     user_id: UUID | None
     config: dict[str, Any]
+    llm: LLM | None = None
 
 
 class AgentError(Exception):
