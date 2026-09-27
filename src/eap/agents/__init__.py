@@ -6,7 +6,10 @@ same rule as models/__init__.py, and the same failure mode if you forget: the ag
 does not exist at dispatch.
 """
 
-from eap.agents import echo  # noqa: E402,F401  (import for its registration side effect)
+from eap.agents import (
+    echo,  # noqa: E402,F401  (import for its registration side effect)
+    summarize,  # noqa: F401
+)
 from eap.agents.base import AgentContext, AgentError, BaseAgent
 from eap.agents.registry import get_agent, register, registered_names
 
