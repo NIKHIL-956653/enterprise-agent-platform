@@ -7,6 +7,7 @@ does not exist at dispatch.
 """
 
 from eap.agents import (
+    docwriter,  # noqa: F401
     echo,  # noqa: E402,F401  (import for its registration side effect)
     summarize,  # noqa: F401
 )
