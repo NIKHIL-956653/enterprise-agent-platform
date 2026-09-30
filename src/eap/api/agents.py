@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from eap.agents import AgentError, registered_names
 from eap.agents.runner import AgentNotEnabled, InvalidAgentInput, execute_agent
 from eap.core.deps import get_claims, get_current_tenant_id, get_tenant_session
+from eap.core.ratelimit import enforce_run_rate_limit
 from eap.models.agent import Agent
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -67,7 +68,11 @@ async def list_agents(
     ]
 
 
-@router.post("/{name}/run", response_model=RunResponse)
+@router.post(
+    "/{name}/run",
+    response_model=RunResponse,
+    dependencies=[Depends(enforce_run_rate_limit)],
+)
 async def run_agent(
     name: str,
     payload: dict[str, Any],

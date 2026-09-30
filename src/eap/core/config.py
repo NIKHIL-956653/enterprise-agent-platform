@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # M4 moves runs onto a Redis queue this becomes the worker's budget instead.
     agent_run_timeout_seconds: int = 60
 
+    # Rate limiting (M4). Per tenant, per minute, on the run endpoint. 0 disables it.
+    # Per-tenant overrides belong on the tenant row later; one global default is enough
+    # while every tenant is a demo tenant.
+    rate_limit_runs_per_minute: int = 60
+
     # LLM APIs (used from M2)
     google_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
