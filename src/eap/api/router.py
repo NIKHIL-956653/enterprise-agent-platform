@@ -2,10 +2,11 @@
 
 from fastapi import APIRouter
 
-from eap.api import agents, auth, health, runs
+from eap.api import agents, auth, documents, health, runs
 
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router, prefix="/v1")
 api_router.include_router(agents.router, prefix="/v1")
+api_router.include_router(documents.router, prefix="/v1")
 api_router.include_router(runs.router, prefix="/v1")
