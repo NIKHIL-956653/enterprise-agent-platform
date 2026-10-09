@@ -43,12 +43,12 @@ class Settings(BaseSettings):
 
     # LLM APIs (used from M2)
     google_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     llm_timeout_seconds: int = 30
     # Embeddings (M3). embedding_dimensions is written into the vector(N) column by
     # migration 0007 — changing it later is a migration AND a re-embed of every chunk, so
     # the column and the client read one value instead of agreeing by hand.
-    embedding_model: str = "text-embedding-004"
+    embedding_model: str = "gemini-embedding-001"
     embedding_dimensions: int = 768
     # One HTTP call per chunk makes ingesting a document feel broken. Batch — but not
     # unboundedly, since a huge request is one timeout away from losing all of it.

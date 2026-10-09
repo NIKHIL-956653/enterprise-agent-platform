@@ -5,15 +5,39 @@ Two things every test needs: a client that talks to the app in-process, and a gu
 that the app's startup actually ran so the DB engine and Redis pool exist.
 """
 
+import socket
 from collections.abc import AsyncIterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.engine import make_url
 
 from eap.api.health import reset_readiness_cache
 from eap.core.config import get_settings
 from eap.core.db import dispose_engine, dispose_owner_engine
 from eap.main import app
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Fail in two seconds if Postgres isn't listening, not in four minutes.
+
+    Every DB test otherwise waits out its own connect timeout, so a stopped
+    Docker costs ~4 minutes to learn one fact.
+    """
+    url = make_url(get_settings().database_url)
+    probe = socket.socket()
+    probe.settimeout(2)
+    try:
+        probe.connect((url.host or "localhost", url.port or 5432))
+    except OSError:
+        pytest.exit(
+            f"Postgres is not accepting connections on "
+            f"{url.host}:{url.port}. Is Docker running? "
+            f"Try: docker compose up -d",
+            returncode=1,
+        )
+    finally:
+        probe.close()
 
 
 @pytest.fixture(autouse=True)
