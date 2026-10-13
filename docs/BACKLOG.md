@@ -4,7 +4,7 @@ Every commit references a ticket id. Tickets are closed by a merged PR, not by b
 
 Status: `✅ done` · `🔨 in progress` · `⬜ todo` · `⏸️ deferred`
 
-Last updated: 2026-09-29, end of M2.
+Last updated: 2026-10-13, end of M3.
 
 ---
 
@@ -94,85 +94,76 @@ Same shape as M1 — the feature is easy, the isolation is the point.
 
 | ID | Title | Status |
 |---|---|---|
-| EAP-27 | docs: BACKLOG catch-up (M0–M2) + M3 sprint plan | 🔨 |
-| EAP-28 | Embeddings boundary — `Embedder` Protocol, `GeminiEmbedder`, fake | ⬜ |
-| EAP-29 | `documents` + `document_chunks`, migration `0007`, RLS + FORCE | ⬜ |
-| EAP-30 | Chunking — pure function, overlap, boundary tests | ⬜ |
-| EAP-31 | `POST /v1/documents` — chunk, batch-embed, store | ⬜ |
-| EAP-32 | Retrieval — cosine top-k scoped to the tenant | ⬜ |
-| EAP-33 | ADR-003 — vector index choice and RAG design | ⬜ |
-| EAP-34 | RAG `answer` agent — retrieve, generate, cite, refuse | ⬜ |
-| EAP-35 | Vector isolation test — A cannot retrieve B's chunks | ⬜ |
-| EAP-36 | Collaborator onboarding — CONTRIBUTING.md, add collaborator | ⬜ |
+| EAP-27 | docs: BACKLOG catch-up (M0–M2) + M3 sprint plan | ✅ |
+| EAP-28 | Embeddings boundary — `Embedder` Protocol, `GeminiEmbedder`, fake | ✅ |
+| EAP-29 | `documents` + `document_chunks`, migration `0007`, RLS + FORCE | ✅ |
+| EAP-30 | Chunking — pure function, overlap, boundary tests | ✅ |
+| EAP-31 | `POST /v1/documents` — chunk, batch-embed, store | ✅ |
+| EAP-32 | Retrieval — cosine top-k scoped to the tenant | ✅ |
+| EAP-33 | ADR-003 — vector index choice and RAG design | ✅ |
+| EAP-34 | RAG `answer` agent — retrieve, generate, cite, refuse | ✅ |
+| EAP-35 | Vector isolation test — A cannot retrieve B's chunks | ✅ |
+| EAP-36 | Collaborator onboarding — CONTRIBUTING.md, add collaborator | ⏸️ |
+| EAP-46 | Per-tenant rate limiting on the run endpoint (pulled forward from M4) | ✅ |
 
-**EAP-35 is the one that matters**, for the same reason EAP-15 did. A similarity search
+**EAP-35 was the one that mattered**, for the same reason EAP-15 did. A similarity search
 that forgets `tenant_id` returns another customer's documents as your answer, and it looks
-like a working feature the entire time.
+like a working feature the entire time. The test asserts an empty result, not a poor one.
 
-### Decisions locked at planning (revisit only in ADR-003)
-1. **Embedding dimension 768.** It fixes the `vector(N)` column; changing it later means
-   re-embedding the whole corpus behind a migration. 3072 costs 4× the storage for recall
-   nobody at this corpus size can measure.
-2. **No vector index until the row count justifies one.** On tens of chunks a sequential
-   scan is faster than an index and exactly correct. IVFFlat built on an empty table trains
-   its lists on nothing and returns poor recall forever after.
-3. **Retrieval spans the tenant's whole corpus**, with an optional `document_ids` filter —
-   one extra WHERE clause, and it demos both ways.
+Closed 2026-10-13: 7 migrations, 86 tests green on main.
+
+Two things landed differently from the plan. Retrieval gained a `min_similarity` floor that
+was not in the EAP-32 description — without it top-k always returns k rows however bad they
+are, and EAP-34's refusal path has nothing to stand on. And `AgentContext` gained a narrow
+`retriever` closure rather than a session, keeping the EAP-17 rule intact: an agent can
+search its own tenant's chunks and do nothing else.
 
 ---
 
-### EAP-28 — Embeddings boundary
-Mirror `src/eap/llm/base.py`: an `Embedder` Protocol with
-`embed(texts: list[str]) -> list[list[float]]`, a `GeminiEmbedder` that is the only file
-importing the vendor SDK, an `lru_cache`d `get_embedder()`, and a deterministic fake for
-tests. Batch by default — one call per chunk is the mistake.
-**Done when:** tests embed with the fake and never touch the network, and a missing key
-raises the same `LLMError` shape `get_llm()` does.
+### EAP-36 — Collaborator onboarding ⏸️
+**Type:** process · **Deferred:** end of M3
 
-### EAP-29 — documents + document_chunks
-`documents` (tenant_id, external_id, title, source, metadata JSONB) and `document_chunks`
-(tenant_id, document_id, ordinal, content, `embedding vector(768)`, token_count).
-Unique on `(tenant_id, external_id)` and `(document_id, ordinal)`. Copy the RLS block from
-`0006` verbatim: ENABLE + FORCE + `tenant_isolation` on both tables.
-**Done when:** `alembic upgrade head` and `alembic check` are both clean, and `eap_app` can
-read and write both tables — `0005`'s DEFAULT PRIVILEGES should cover it, so verify rather
-than assume.
+Written for a second contributor who did not materialise. The repo stays solo, so branch
+protection and a green PR are the only ceremony that earns its keep.
 
-### EAP-30 — Chunking
-Pure function, no DB, no LLM, no I/O: `chunk(text, size, overlap) -> list[str]`.
-Tests: empty, shorter than one chunk, exact multiple, overlap actually overlaps, no chunk
-exceeds size. The only piece of M3 fully testable without Postgres or a model — which is
-why it is the first ticket to hand a new contributor.
+**Revisit when:** someone actually commits. CONTRIBUTING.md is the first thing they would need.
 
-### EAP-31 — POST /v1/documents
-Accept title + text + optional `external_id`; chunk, embed the batch, insert the document
-and its chunks in one transaction.
-**Done when:** posting the same `external_id` twice leaves one document and the same chunk
-count, not duplicates.
+---
 
-### EAP-32 — Retrieval
-`search(session, tenant_id, query, k, document_ids=None)` — embed the query, `ORDER BY
-embedding <=> :q` with `vector_cosine_ops`, `LIMIT k`. No index yet, per decision 2.
-**Done when:** a test seeds known chunks and asserts the nearest one comes back first.
+## Sprint 4 — M4 Enterprise hardening (provisional) ⬜
 
-### EAP-33 — ADR-003 — vector index and RAG design
-Context / Decision / Consequences on: the dimension choice, cosine over L2, the index
-deferred and the row count that should trigger HNSW, embedding stored on the chunks table
-rather than a separate vector store, and what a re-embed would actually cost.
+**Not locked.** Three things gate any serious enterprise deployment and none of them exist:
+per-user authorization inside a tenant, a real audit trail, and durable execution. Those
+outrank the admin UI, which is visible but not blocking. That reorders the original
+M4/M5 plan — compliance moves forward, UI moves back.
 
-### EAP-34 — RAG answer agent
-New agent `answer`: retrieve top-k for the question, build a prompt from the chunks,
-generate, and return the chunk ids it used. If the best distance is worse than a threshold,
-say the corpus does not cover the question instead of answering — the same discipline as
-docwriter's Known Limitations rule.
-**Done when:** a `ScriptedLLM` test proves the refusal path fires on weak retrieval.
+| ID | Title | Status |
+|---|---|---|
+| EAP-40 | ABAC — document classification + principal in the RLS predicate | ⬜ |
+| EAP-41 | Audit trail — append-only, hash-chained, INSERT-only role | ⬜ |
+| EAP-42 | Audit capture points + PII redaction policy | ⬜ |
+| EAP-43 | Temporal — runner as workflow, activities, worker deployment | ⬜ |
+| EAP-44 | Step-level checkpointing + idempotency keys on run requests | ⬜ |
+| EAP-45 | Provider backoff, circuit breaker, bounded per-tenant concurrency | ⬜ |
+| EAP-47 | Per-tenant provider keys via secrets manager (unblocks EAP-26) | ⬜ |
+| EAP-48 | Hybrid retrieval — BM25 alongside vectors, merged by RRF | ⬜ |
+| EAP-49 | Eval harness — context precision and faithfulness on a fixed set | ⬜ |
 
-### EAP-35 — Vector isolation test
-Seed two tenants with deliberately near-identical text. Assert tenant A's search returns
-only A's chunks, at the HTTP layer, running as `eap_app`. The RLS policy should make this
-pass for free — the test exists to prove it did not silently get turned off.
+### Sequencing note
+EAP-43 reshapes how a run executes, so audit capture points built before it would be
+rebuilt after it. Either Temporal goes first, or EAP-42 is written transport-agnostic from
+the start. Prefer the second: audit lands sooner and survives the migration.
 
-### EAP-36 — Collaborator onboarding
-CONTRIBUTING.md (branch naming, conventional commits, ticket refs, how to bring the stack
-up), add the collaborator on GitHub, confirm branch protection still demands a green PR
-from his account. First ticket for him: EAP-30 — no database and no API key needed.
+### Open before these are committed
+EAP-48 and EAP-49 are conditional. Hybrid retrieval matters only if users search exact part
+numbers or policy IDs — vectors fail on rare literal strings, and nothing else fixes that.
+Evals move from roadmap to blocking if a faithfulness score has to gate a deployment, which
+also means someone has to own the threshold number.
+
+Also scope-bearing and unanswered in general: where a deployment's documents live today
+(connector work is the most underestimated piece of any RAG build), how often they change,
+how many there are, and what latency users expect.
+
+### Numbering
+`eap/M6-M10-bilingual-plan.md` still uses EAP-30..73, which now collides with M3 and this
+sprint. Renumber it to EAP-60+ before any of it starts.
