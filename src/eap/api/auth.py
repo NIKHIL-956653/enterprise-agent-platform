@@ -71,7 +71,9 @@ async def login(
     if user is None or not user.is_active or not verify_password(body.password, user.password_hash):
         raise _INVALID
 
-    token = create_access_token(user_id=user.id, tenant_id=user.tenant_id, role=user.role.value)
+    token = create_access_token(
+        user_id=user.id, tenant_id=user.tenant_id, role=user.role.value, clearance=user.clearance
+    )
     return TokenResponse(access_token=token)
 
 

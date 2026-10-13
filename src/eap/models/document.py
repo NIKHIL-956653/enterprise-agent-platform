@@ -7,10 +7,11 @@ strategy replaces the chunks and leaves the document — and its id, which other
 already reference — untouched.
 """
 
+import enum
 import uuid
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, Integer, SmallInteger, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +23,22 @@ from eap.models.meta import Timestamps, UUIDPk
 # fail depending on the machine it runs on. tests/test_document_models.py asserts this and
 # settings.embedding_dimensions agree, so drift is caught in CI, not at the first INSERT.
 EMBEDDING_DIMENSIONS = 768
+
+
+class Classification(enum.IntEnum):
+    """
+    Sensitivity levels, ordered. A caller sees a row when their clearance is at least its
+    classification, so the ORDER is the whole semantics.
+
+    Stored as smallint rather than a Postgres enum on purpose: `<=` on a Postgres enum
+    compares by declaration order, which silently becomes wrong the first time someone
+    inserts a new level in the middle. An integer cannot drift like that.
+    """
+
+    PUBLIC = 0
+    INTERNAL = 1
+    CONFIDENTIAL = 2
+    RESTRICTED = 3
 
 
 class Document(UUIDPk, Timestamps, Base):
@@ -41,6 +58,9 @@ class Document(UUIDPk, Timestamps, Base):
     external_id: Mapped[str] = mapped_column(String(200))
     title: Mapped[str] = mapped_column(String(300))
     source: Mapped[str] = mapped_column(String(50), default="upload", server_default="upload")
+    classification: Mapped[int] = mapped_column(
+        SmallInteger, default=Classification.PUBLIC, server_default="0"
+    )
 
     # Whatever the caller wants to filter or display later — author, space key, url. JSONB
     # for the same reason agent config is: a new source must not require a migration.
@@ -83,6 +103,9 @@ class DocumentChunk(UUIDPk, Timestamps, Base):
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSIONS))
 
     token_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    classification: Mapped[int] = mapped_column(
+        SmallInteger, default=Classification.PUBLIC, server_default="0"
+    )
 
     def __repr__(self) -> str:
         return f"<DocumentChunk {self.document_id}#{self.ordinal}>"

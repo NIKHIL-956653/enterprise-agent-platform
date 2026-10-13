@@ -19,15 +19,18 @@ class TokenError(Exception):
     """Raised for any invalid token: bad signature, expired, malformed, wrong claims."""
 
 
-def create_access_token(*, user_id: UUID, tenant_id: UUID, role: str) -> str:
+def create_access_token(*, user_id: UUID, tenant_id: UUID, role: str, clearance: int = 0) -> str:
     """
     Mint a signed access token.
 
-    sub  = the user (JWT convention)
-    tid  = the tenant this token acts for
-    role = coarse permission level, so common checks need no database round trip
-    exp  = expiry. Short-lived on purpose: a leaked token stops working on its own,
-           and it is the only revocation we have until a refresh-token store exists.
+    sub       = the user (JWT convention)
+    tid       = the tenant this token acts for
+    role      = coarse permission level, so common checks need no database round trip
+    clearance = highest document classification this user may read (EAP-40). Separate
+                from role on purpose: administering a tenant and reading its restricted
+                documents are different permissions.
+    exp       = expiry. Short-lived on purpose: a leaked token stops working on its own,
+                and it is the only revocation we have until a refresh-token store exists.
     """
     s = get_settings()
     now = datetime.now(UTC)
@@ -35,6 +38,7 @@ def create_access_token(*, user_id: UUID, tenant_id: UUID, role: str) -> str:
         "sub": str(user_id),
         "tid": str(tenant_id),
         "role": role,
+        "clearance": int(clearance),
         "iat": now,
         "exp": now + timedelta(minutes=s.access_token_ttl_minutes),
     }

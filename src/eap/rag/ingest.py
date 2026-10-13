@@ -59,6 +59,7 @@ async def ingest_document(
     body: str,
     external_id: str | None = None,
     source: str = "upload",
+    classification: int = 0,
     embedder: Embedder | None = None,
 ) -> IngestResult:
     """
@@ -67,6 +68,10 @@ async def ingest_document(
     `external_id` is the caller's own identifier - a Jira key, a Confluence page id, a
     filename. Re-posting the same one replaces its chunks instead of adding a second near
     duplicate that competes with the first for every query.
+
+    `classification` is the sensitivity level (0 public .. 3 restricted). The RLS policy's
+    WITH CHECK rejects a value above the caller's own clearance, so this needs no guard
+    here - attempting it fails at the database rather than in a rule someone can forget.
     """
     chunks = chunk(body)
     if not chunks:
@@ -82,13 +87,20 @@ async def ingest_document(
     document_id = (
         await session.execute(
             text(
-                "INSERT INTO documents (id, tenant_id, external_id, title, source) "
-                "VALUES (gen_random_uuid(), :tid, :xid, :title, :source) "
+                "INSERT INTO documents (id, tenant_id, external_id, title, source, classification) "
+                "VALUES (gen_random_uuid(), :tid, :xid, :title, :source, :cls) "
                 "ON CONFLICT (tenant_id, external_id) DO UPDATE "
-                "SET title = EXCLUDED.title, source = EXCLUDED.source, updated_at = now() "
+                "SET title = EXCLUDED.title, source = EXCLUDED.source, "
+                "    classification = EXCLUDED.classification, updated_at = now() "
                 "RETURNING id"
             ),
-            {"tid": str(tenant_id), "xid": external_id, "title": title, "source": source},
+            {
+                "tid": str(tenant_id),
+                "xid": external_id,
+                "title": title,
+                "source": source,
+                "cls": int(classification),
+            },
         )
     ).scalar_one()
 
@@ -102,9 +114,9 @@ async def ingest_document(
     await session.execute(
         text(
             "INSERT INTO document_chunks "
-            "(id, tenant_id, document_id, ordinal, content, embedding, token_count) "
+            "(id, tenant_id, document_id, ordinal, content, embedding, token_count, classification) "
             "VALUES (gen_random_uuid(), :tid, :did, :ordinal, :content, "
-            "CAST(:embedding AS vector), :tokens)"
+            "CAST(:embedding AS vector), :tokens, :cls)"
         ),
         [
             {
@@ -117,6 +129,7 @@ async def ingest_document(
                 # cost reporting, not for billing, and a real tokenizer is a model-specific
                 # dependency this layer does not need.
                 "tokens": max(len(content) // 4, 1),
+                "cls": int(classification),
             }
             for i, (content, vector) in enumerate(zip(chunks, vectors, strict=True))
         ],

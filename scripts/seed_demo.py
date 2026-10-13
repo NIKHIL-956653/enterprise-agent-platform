@@ -34,8 +34,8 @@ async def main() -> None:
 
         await s.execute(
             text(
-                "INSERT INTO users (id, tenant_id, email, password_hash, role) "
-                "VALUES (gen_random_uuid(), :tid, :email, :ph, 'owner') "
+                "INSERT INTO users (id, tenant_id, email, password_hash, role, clearance) "
+                "VALUES (gen_random_uuid(), :tid, :email, :ph, 'owner', 3) "
                 "ON CONFLICT (tenant_id, email) DO UPDATE SET password_hash = EXCLUDED.password_hash"
             ),
             {"tid": tenant_id, "email": EMAIL, "ph": hash_password(PASSWORD)},

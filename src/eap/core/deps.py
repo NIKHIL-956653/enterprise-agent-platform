@@ -53,21 +53,42 @@ async def get_current_tenant_id(claims: Annotated[dict[str, Any], Depends(get_cl
         raise _UNAUTHORIZED from e
 
 
+async def get_current_clearance(claims: Annotated[dict[str, Any], Depends(get_claims)]) -> int:
+    """
+    How sensitive a document this caller may read. From the verified token only, same rule
+    as the tenant - a caller who can name their own clearance has none.
+
+    A token minted before EAP-40 carries no `clearance` claim and reads as 0, the lowest
+    level. That is the fail-closed direction: an old token keeps working and sees public
+    documents, never restricted ones.
+    """
+    try:
+        return int(claims.get("clearance", 0))
+    except (TypeError, ValueError) as e:
+        raise _UNAUTHORIZED from e
+
+
 async def get_tenant_session(
     tenant_id: Annotated[UUID, Depends(get_current_tenant_id)],
+    clearance: Annotated[int, Depends(get_current_clearance)],
 ) -> AsyncIterator[AsyncSession]:
     """
-    A session whose every query is already filtered to one tenant.
+    A session whose every query is already filtered to one tenant and one clearance level.
 
-    set_config(..., true) makes the setting TRANSACTION-local. That third argument is the
+    set_config(..., true) makes both settings TRANSACTION-local. That third argument is the
     whole safety story: a session-local setting would survive on a pooled connection and
-    serve the previous tenant's context to the next request. Transaction-local dies with
-    the transaction, every time, even on an exception.
+    serve the previous request's context to the next one - the previous TENANT at worst,
+    and a higher clearance than this caller has at best. Transaction-local dies with the
+    transaction, every time, even on an exception.
     """
     async with get_session_factory()() as session:
         try:
             await session.execute(
-                text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tenant_id)}
+                text(
+                    "SELECT set_config('app.tenant_id', :tid, true), "
+                    "       set_config('app.clearance', :clr, true)"
+                ),
+                {"tid": str(tenant_id), "clr": str(clearance)},
             )
             yield session
             await session.commit()
