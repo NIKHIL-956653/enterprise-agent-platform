@@ -24,7 +24,7 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     Every DB test otherwise waits out its own connect timeout, so a stopped
     Docker costs ~4 minutes to learn one fact.
     """
-    url = make_url(get_settings().database_url)
+    url = make_url(str(get_settings().database_url))
     probe = socket.socket()
     probe.settimeout(2)
     try:
