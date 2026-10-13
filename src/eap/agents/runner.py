@@ -18,11 +18,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eap.agents import AgentContext, AgentError, get_agent
+from eap.agents.base import Retriever
 from eap.core.config import get_settings
 from eap.core.logging import get_logger
 from eap.llm.base import LLM, LLMError
 from eap.llm.gemini import get_llm
 from eap.models.agent import Agent, AgentRun, RunStatus
+from eap.rag import retrieval
+from eap.rag.retrieval import RetrievedChunk
 
 log = get_logger("eap.agents")
 
@@ -50,6 +53,21 @@ def _default_llm() -> LLM | None:
         return None
 
 
+def _bind_retriever(session: AsyncSession) -> Retriever:
+    """
+    Retrieval closed over the request's session. The agent receives the function, never the
+    session: it can search this tenant's chunks and do nothing else. RLS scoped the session
+    before the agent asks, so no input an agent passes can widen its own view.
+    """
+
+    async def _retrieve(query: str, *, top_k: int, min_similarity: float) -> list[RetrievedChunk]:
+        return await retrieval.retrieve(
+            session=session, query=query, top_k=top_k, min_similarity=min_similarity
+        )
+
+    return _retrieve
+
+
 async def execute_agent(
     *,
     session: AsyncSession,
@@ -58,6 +76,7 @@ async def execute_agent(
     agent_name: str,
     payload: dict[str, Any],
     llm: LLM | None = None,
+    retriever: Retriever | None = None,
 ) -> AgentRun:
     # No tenant filter: the session already carries app.tenant_id, so RLS scopes this to
     # the caller's tenant. Another tenant's agent row simply does not exist here.
@@ -90,6 +109,7 @@ async def execute_agent(
         config=agent_row.config or {},
         # Explicitly injected (tests) beats resolved (production). Same call, no fake path.
         llm=llm if llm is not None else _default_llm(),
+        retriever=retriever if retriever is not None else _bind_retriever(session),
     )
     timeout = get_settings().agent_run_timeout_seconds
     started = time.perf_counter()
