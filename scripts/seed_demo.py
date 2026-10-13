@@ -45,6 +45,7 @@ async def main() -> None:
             ("echo", "Echo"),
             ("summarize", "Summarize"),
             ("docwriter", "Document Writer"),
+            ("answer", "Answer from documents"),
         ):
             await s.execute(
                 text(
@@ -58,7 +59,7 @@ async def main() -> None:
 
     print(f"tenant : {SLUG}  ({tenant_id})")
     print(f"login  : {EMAIL} / {PASSWORD}")
-    print("agents : echo, summarize, docwriter")
+    print("agents : echo, summarize, docwriter, answer")
     await dispose_owner_engine()
 
 
