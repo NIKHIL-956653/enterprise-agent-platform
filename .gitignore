@@ -12,6 +12,9 @@ build/
 htmlcov/
 .coverage
 data/
-*.logClaude outputs/
-
+*.log
 Claude outputs/
+
+# Netlify CLI was run here by mistake once; ignore what it drops
+.netlify/
+netlify.toml
