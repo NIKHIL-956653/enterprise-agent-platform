@@ -8,7 +8,7 @@ model exists to make cross-tenant access impossible rather than merely unlikely.
 import enum
 import uuid
 
-from sqlalchemy import Enum, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Enum, ForeignKey, SmallInteger, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -60,6 +60,11 @@ class User(UUIDPk, Timestamps, Base):
     # Deactivate rather than delete: audit trails and agent runs must keep pointing at a
     # real user row.
     is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
+
+    # Clearance is deliberately NOT derived from `role`. "May administer this tenant" and
+    # "may read restricted documents" are different questions, and an org that conflates
+    # them has to promote someone to admin to let them read a document.
+    clearance: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
 
     def __repr__(self) -> str:
         return f"<User {self.email} tenant={self.tenant_id}>"

@@ -12,6 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eap.core.deps import get_current_tenant_id, get_tenant_session
@@ -28,6 +29,9 @@ class IngestRequest(BaseModel):
     # means "this is the same document as last time", and re-posting replaces it.
     external_id: str | None = Field(default=None, max_length=200)
     source: str = Field(default="upload", max_length=50)
+    # 0 public, 1 internal, 2 confidential, 3 restricted. Above your own clearance is
+    # rejected by the database, not by a check here.
+    classification: int = Field(default=0, ge=0, le=3)
 
 
 class IngestResponse(BaseModel):
@@ -50,7 +54,15 @@ async def create_document(
             body=payload.body,
             external_id=payload.external_id,
             source=payload.source,
+            classification=payload.classification,
         )
+    except DBAPIError as e:
+        # The RLS WITH CHECK refused the row. The only way to trip it is classifying a
+        # document above your own clearance, so say that rather than leaking a driver error.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="classification exceeds your clearance",
+        ) from e
     except EmptyDocument as e:
         # 422, not 500: the caller sent something, it just had no content in it.
         raise HTTPException(
