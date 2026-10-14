@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     # M4 moves runs onto a Redis queue this becomes the worker's budget instead.
     agent_run_timeout_seconds: int = 60
 
+    # Temporal (EAP-43). Dev runs the auto-setup container from docker-compose; production
+    # points this at a real cluster or Temporal Cloud. The task queue name is an API
+    # contract between the worker and whoever enqueues - change it and runs silently stop
+    # being picked up, so it lives here, not inline.
+    temporal_address: str = "localhost:7233"
+    temporal_task_queue: str = "eap-agent-runs"
+
     # Rate limiting (M4). Per tenant, per minute, on the run endpoint. 0 disables it.
     # Per-tenant overrides belong on the tenant row later; one global default is enough
     # while every tenant is a demo tenant.

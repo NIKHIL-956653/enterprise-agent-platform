@@ -21,6 +21,7 @@ dependencies = [
   "email-validator>=2.2",
   "google-genai>=1.0.0",
   "langgraph>=1.0",
+  "temporalio>=1.9",
 ]
 
 [project.optional-dependencies]

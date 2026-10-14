@@ -37,6 +37,16 @@ jobs:
           --health-timeout 3s
           --health-retries 10
 
+      temporal:
+        image: temporalio/auto-setup:1.24.2
+        env:
+          DB: postgres12
+          POSTGRES_USER: eap
+          POSTGRES_PWD: eap
+          POSTGRES_SEEDS: postgres
+        ports:
+          - 7233:7233
+
     env:
       APP_ENV: test
       LOG_LEVEL: WARNING
