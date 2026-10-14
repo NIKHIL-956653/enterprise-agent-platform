@@ -22,6 +22,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from eap.audit.redact import redact
+
 
 async def record(
     session: AsyncSession,
@@ -32,6 +34,12 @@ async def record(
     run_id: UUID | None = None,
 ) -> None:
     """Append one event to this tenant's trail. The trigger links it into the chain."""
+    # Redaction happens HERE, not at call sites, so no caller can forget it. The count is
+    # written into the payload: a trail that silently omits is a trail that lies, so the
+    # fact of removal is itself on the record. The hash chains over the redacted form.
+    cleaned, removed = redact(payload)
+    if removed:
+        cleaned["_redactions"] = removed
     await session.execute(
         text(
             "INSERT INTO audit_log (id, tenant_id, run_id, event_type, payload) "
@@ -41,7 +49,7 @@ async def record(
             "tid": str(tenant_id),
             "rid": str(run_id) if run_id is not None else None,
             "etype": event_type,
-            "payload": json.dumps(payload),
+            "payload": json.dumps(cleaned),
         },
     )
 
