@@ -9,12 +9,14 @@ Rule: every new model file gets a line here, in the same commit.
 """
 
 from eap.models.agent import Agent, AgentRun, RunStatus
+from eap.models.audit import AuditEvent
 from eap.models.base import Base
 from eap.models.document import Document, DocumentChunk
 from eap.models.tenant import Tenant, TenantStatus
 from eap.models.user import User, UserRole
 
 __all__ = [
+    "AuditEvent",
     "Agent",
     "AgentRun",
     "Base",
