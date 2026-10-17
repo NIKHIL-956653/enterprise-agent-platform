@@ -143,6 +143,7 @@ async def execute_agent(
     payload: dict[str, Any],
     llm: LLM | None = None,
     retriever: Retriever | None = None,
+    run_id: UUID | None = None,
 ) -> AgentRun:
     # No tenant filter: the session already carries app.tenant_id, so RLS scopes this to
     # the caller's tenant. Another tenant's agent row simply does not exist here.
@@ -159,15 +160,26 @@ async def execute_agent(
     except ValidationError as e:
         raise InvalidAgentInput(e.errors()) from e
 
-    run = AgentRun(
-        tenant_id=tenant_id,
-        agent_id=agent_row.id,
-        triggered_by=user_id,
-        status=RunStatus.RUNNING,
-        input=payload,
-    )
-    session.add(run)
-    await session.flush()  # assigns run.id without ending the transaction
+    if run_id is not None:
+        # EAP-44: the API pre-created this row (status QUEUED) before enqueueing. RLS
+        # scopes the lookup, so a worker can never pick up another tenant's run.
+        run = await session.get(AgentRun, run_id)
+        if run is None:
+            # Wrong tenant context or the API's commit never landed. Raising is right:
+            # this is infrastructure, and Temporal's retry is the tool for it.
+            raise RuntimeError(f"run {run_id} is not visible to this tenant")
+        run.status = RunStatus.RUNNING
+        await session.flush()
+    else:
+        run = AgentRun(
+            tenant_id=tenant_id,
+            agent_id=agent_row.id,
+            triggered_by=user_id,
+            status=RunStatus.RUNNING,
+            input=payload,
+        )
+        session.add(run)
+        await session.flush()  # assigns run.id without ending the transaction
 
     await record(
         session,
