@@ -19,6 +19,10 @@ class AgentRunRequest:
     clearance: int
     agent_name: str
     payload: dict[str, Any]
+    # The pre-created run row to execute against (EAP-44). The API creates the row with
+    # status QUEUED before enqueueing, so the caller holds an id to poll before any worker
+    # picks the job up. Optional so histories serialized before this field still decode.
+    run_id: str | None = None
 
 
 @dataclass
@@ -26,3 +30,9 @@ class AgentRunResult:
     run_id: str
     status: str
     error: str | None
+    # EAP-44: the sync API path answers from this result instead of re-reading the row,
+    # so the result carries everything the response envelope needs.
+    output: dict[str, Any] | None = None
+    latency_ms: int | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0

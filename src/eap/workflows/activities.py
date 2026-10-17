@@ -39,6 +39,15 @@ async def run_agent(request: AgentRunRequest) -> AgentRunResult:
             user_id=UUID(request.user_id) if request.user_id else None,
             agent_name=request.agent_name,
             payload=request.payload,
+            run_id=UUID(request.run_id) if request.run_id else None,
         )
         await session.commit()
-        return AgentRunResult(run_id=str(run.id), status=run.status.value, error=run.error)
+        return AgentRunResult(
+            run_id=str(run.id),
+            status=run.status.value,
+            error=run.error,
+            output=run.output,
+            latency_ms=run.latency_ms,
+            prompt_tokens=run.prompt_tokens,
+            completion_tokens=run.completion_tokens,
+        )

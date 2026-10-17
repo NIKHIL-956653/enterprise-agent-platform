@@ -72,6 +72,13 @@ class AgentRun(UUIDPk, Timestamps, Base):
         # Run history is always "this tenant, newest first". tenant_id must lead the index
         # or RLS filters millions of rows before the sort can help.
         Index("ix_agent_runs_tenant_id_created_at", "tenant_id", text("created_at DESC")),
+        Index(
+            "uq_agent_runs_tenant_idempotency",
+            "tenant_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -87,6 +94,10 @@ class AgentRun(UUIDPk, Timestamps, Base):
     triggered_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+
+    # The caller's own retry token (EAP-44). Unique per tenant when present - see
+    # migration 0010's partial index. Nullable: idempotency is opt-in per request.
+    idempotency_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     status: Mapped[RunStatus] = mapped_column(
         _enum_col(RunStatus, "runstatus"),
