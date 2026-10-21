@@ -22,6 +22,8 @@ from eap.rag import ingest
 # Bag-of-words fake: shared words -> high cosine, disjoint words -> ~0. Defined once, there.
 from tests.test_retrieval import RankingFakeEmbedder
 
+pytestmark = pytest.mark.usefixtures("temporal_worker")
+
 PASSWORD = "correct-horse-battery-staple"
 PARKING = "Resident parking is in the marina basement on level two. Visitor parking is beside the pool."
 ON_TOPIC = "Where is resident parking in the marina?"

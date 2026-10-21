@@ -15,6 +15,8 @@ from sqlalchemy import text
 from eap.core.db import get_owner_session_factory
 from eap.core.security import hash_password
 
+pytestmark = pytest.mark.usefixtures("temporal_worker")
+
 PASSWORD = "correct-horse-battery-staple"
 
 

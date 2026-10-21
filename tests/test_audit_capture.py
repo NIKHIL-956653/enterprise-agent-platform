@@ -22,6 +22,8 @@ from eap.llm.base import LLMError
 from eap.rag import ingest
 from tests.test_retrieval import RankingFakeEmbedder
 
+pytestmark = pytest.mark.usefixtures("temporal_worker")
+
 PASSWORD = "correct-horse-battery-staple"
 # Long enough for summarize's 50-char floor, and salted with exactly the shapes the
 # redactor must catch. The model may see this raw; the TRAIL must not.
