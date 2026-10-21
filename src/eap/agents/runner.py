@@ -23,7 +23,7 @@ from eap.audit import record
 from eap.core.config import get_settings
 from eap.core.logging import get_logger
 from eap.llm.base import LLM, LLMError
-from eap.llm.gemini import get_llm
+from eap.llm.provider import get_llm
 from eap.models.agent import Agent, AgentRun, RunStatus
 from eap.rag import retrieval
 from eap.rag.retrieval import RetrievedChunk
