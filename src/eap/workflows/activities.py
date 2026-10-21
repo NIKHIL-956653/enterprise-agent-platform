@@ -13,19 +13,41 @@ the worker dying mid-run. That is the line between "the platform worked and the 
 was no" and "the platform did not get to work".
 """
 
+import asyncio
 from uuid import UUID
 
 from sqlalchemy import text
 from temporalio import activity
 
 from eap.agents.runner import execute_agent
+from eap.core.config import get_settings
 from eap.core.db import get_session_factory
 from eap.workflows.shared import AgentRunRequest, AgentRunResult
+
+_tenant_slots: dict[str, asyncio.Semaphore] = {}
+
+
+def _slot(tenant_id: str) -> asyncio.Semaphore:
+    """
+    Per-tenant concurrency gate, per worker process (EAP-45). A tenant's 50-run burst
+    executes a few at a time while every other tenant's stoves stay free; the rest of the
+    burst waits its turn - it is queued work, waiting is its job.
+
+    The dict grows with distinct tenants this worker has seen. Tenant counts are small;
+    bounding it is follow-up polish, not a present need. Global (cross-worker) caps need
+    shared state and are deliberately out of EAP-45's scope.
+    """
+    sem = _tenant_slots.get(tenant_id)
+    if sem is None:
+        sem = _tenant_slots.setdefault(
+            tenant_id, asyncio.Semaphore(get_settings().tenant_max_concurrent_runs)
+        )
+    return sem
 
 
 @activity.defn
 async def run_agent(request: AgentRunRequest) -> AgentRunResult:
-    async with get_session_factory()() as session:
+    async with _slot(request.tenant_id), get_session_factory()() as session:
         await session.execute(
             text(
                 "SELECT set_config('app.tenant_id', :tid, true), "

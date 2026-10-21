@@ -8,6 +8,7 @@ network, cost or nondeterminism. A real-Gemini smoke test belongs in a manual de
 
 import uuid
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 
@@ -15,6 +16,8 @@ from eap.agents import runner
 from eap.core.db import get_owner_session_factory
 from eap.core.security import hash_password
 from eap.llm.base import LLMError
+
+pytestmark = pytest.mark.usefixtures("temporal_worker")
 
 PASSWORD = "correct-horse-battery-staple"
 TEXT = (

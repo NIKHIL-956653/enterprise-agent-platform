@@ -18,9 +18,7 @@ def upgrade() -> None:
     # Nullable on purpose: idempotency is the CLIENT's choice. A caller that sends no key
     # gets a fresh run per POST, exactly as before. A caller that sends one gets the same
     # run back however many times its retry logic fires.
-    op.add_column(
-        "agent_runs", sa.Column("idempotency_key", sa.String(length=200), nullable=True)
-    )
+    op.add_column("agent_runs", sa.Column("idempotency_key", sa.String(length=200), nullable=True))
     # Partial unique index: NULLs stay free (every keyless run may coexist), duplicates of
     # a real key are refused by the DATABASE - the race between two concurrent retries is
     # settled here, not in application code that both requests run simultaneously.

@@ -25,6 +25,8 @@ from eap.rag.retrieval import retrieve
 # Bag-of-words over a fixed vocabulary, L2-normalised. Defined once, in test_retrieval.
 from tests.test_retrieval import RankingFakeEmbedder
 
+pytestmark = pytest.mark.usefixtures("temporal_worker")
+
 PASSWORD = "correct-horse-battery-staple"
 
 # Both mention marina and parking, so both are near-identical to the query below. Which one
