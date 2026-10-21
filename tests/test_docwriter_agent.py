@@ -8,12 +8,15 @@ HTTP test at the end proves the agent is wired into the platform like every othe
 
 import uuid
 
+import pytest
 from sqlalchemy import text
 
 from eap.agents import runner
 from eap.agents.docwriter_graph import build_graph
 from eap.core.db import get_owner_session_factory
 from eap.core.security import hash_password
+
+pytestmark = pytest.mark.usefixtures("temporal_worker")
 
 PASSWORD = "correct-horse-battery-staple"
 

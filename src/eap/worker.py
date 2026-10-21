@@ -29,6 +29,8 @@ async def main() -> None:
         task_queue=settings.temporal_task_queue,
         workflows=[AgentRunWorkflow],
         activities=[run_agent],
+        # The global ceiling; the per-tenant gate shares it out fairly.
+        max_concurrent_activities=settings.worker_max_concurrent_activities,
     )
     await worker.run()
 
