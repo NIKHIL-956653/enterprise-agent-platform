@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     # one customer cannot occupy every stove.
     tenant_max_concurrent_runs: int = 4
     worker_max_concurrent_activities: int = 20
+
+    # EAP-50 provider selection. Completions switch per deployment; embeddings stay
+    # Gemini regardless of this setting - Anthropic has no embeddings API.
+    llm_provider: Literal["gemini", "anthropic"] = "gemini"
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-haiku-4-5"
     # Embeddings (M3). embedding_dimensions is written into the vector(N) column by
     # migration 0007 — changing it later is a migration AND a re-embed of every chunk, so
     # the column and the client read one value instead of agreeing by hand.
