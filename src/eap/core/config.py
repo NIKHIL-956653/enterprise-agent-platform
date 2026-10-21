@@ -52,6 +52,16 @@ class Settings(BaseSettings):
     google_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
     llm_timeout_seconds: int = 30
+    # EAP-45 resilience. Retry absorbs one dropped delivery; the breaker absorbs a down
+    # provider. Both are per worker process - the global version needs shared state.
+    llm_retry_attempts: int = 3
+    llm_retry_base_delay_ms: int = 200
+    breaker_failure_threshold: int = 5
+    breaker_cooldown_seconds: int = 30
+    # One tenant's queued backlog executes this many at a time per worker, so a burst from
+    # one customer cannot occupy every stove.
+    tenant_max_concurrent_runs: int = 4
+    worker_max_concurrent_activities: int = 20
     # Embeddings (M3). embedding_dimensions is written into the vector(N) column by
     # migration 0007 — changing it later is a migration AND a re-embed of every chunk, so
     # the column and the client read one value instead of agreeing by hand.

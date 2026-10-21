@@ -14,6 +14,38 @@ from google.genai import types
 
 from eap.core.config import get_settings
 from eap.llm.base import LLMError
+from eap.llm.resilience import CircuitBreaker, CircuitOpenError, call_with_retry
+
+_TRANSIENT_CODES = {429, 500, 502, 503, 504}
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Worth retrying: rate limits, server errors, drops. getattr-based so an SDK upgrade
+    that reshapes its exception classes degrades to 'not transient', never to a crash."""
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if isinstance(code, int) and code in _TRANSIENT_CODES:
+        return True
+    return isinstance(exc, (TimeoutError, ConnectionError, OSError))
+
+
+@lru_cache
+def _llm_breaker() -> CircuitBreaker:
+    s = get_settings()
+    return CircuitBreaker(
+        failure_threshold=s.breaker_failure_threshold,
+        cooldown_seconds=s.breaker_cooldown_seconds,
+    )
+
+
+@lru_cache
+def _embed_breaker() -> CircuitBreaker:
+    # Separate from the completion breaker: the two endpoints fail independently, and a
+    # broken embedder must not block summaries that never touch it.
+    s = get_settings()
+    return CircuitBreaker(
+        failure_threshold=s.breaker_failure_threshold,
+        cooldown_seconds=s.breaker_cooldown_seconds,
+    )
 
 
 class GeminiLLM:
@@ -30,8 +62,10 @@ class GeminiLLM:
         self._model = model
 
     async def complete(self, prompt: str, *, max_output_tokens: int = 1024) -> str:
-        try:
-            response = await self._client.aio.models.generate_content(
+        s = get_settings()
+
+        async def _call():
+            return await self._client.aio.models.generate_content(
                 model=self._model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
@@ -41,6 +75,22 @@ class GeminiLLM:
                     temperature=0.2,
                 ),
             )
+
+        try:
+            # Breaker OUTSIDE retry: an open circuit skips the whole retry dance, and the
+            # breaker counts post-retry outcomes - one provider blip absorbed by backoff
+            # is a success, not a strike.
+            response = await _llm_breaker().call(
+                lambda: call_with_retry(
+                    _call,
+                    attempts=s.llm_retry_attempts,
+                    base_delay_s=s.llm_retry_base_delay_ms / 1000,
+                    is_transient=_is_transient,
+                )
+            )
+        except CircuitOpenError:
+            # Already an LLMError with the honest message; re-wrapping would blur it.
+            raise
         except Exception as exc:
             # Every provider failure collapses to one error type. The caller gets "it
             # failed"; the original stays in the logs via `from exc` and never reaches an
@@ -115,8 +165,10 @@ class GeminiEmbedder:
         return (await self._embed([text], "RETRIEVAL_QUERY"))[0]
 
     async def _embed(self, batch: list[str], task_type: str) -> list[list[float]]:
-        try:
-            response = await self._client.aio.models.embed_content(
+        s = get_settings()
+
+        async def _call():
+            return await self._client.aio.models.embed_content(
                 model=self._model,
                 contents=batch,
                 config=types.EmbedContentConfig(
@@ -124,6 +176,18 @@ class GeminiEmbedder:
                     output_dimensionality=self._dimensions,
                 ),
             )
+
+        try:
+            response = await _embed_breaker().call(
+                lambda: call_with_retry(
+                    _call,
+                    attempts=s.llm_retry_attempts,
+                    base_delay_s=s.llm_retry_base_delay_ms / 1000,
+                    is_transient=_is_transient,
+                )
+            )
+        except CircuitOpenError:
+            raise
         except Exception as exc:
             raise LLMError("embedding call failed") from exc
 
