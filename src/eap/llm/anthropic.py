@@ -54,9 +54,9 @@ class AnthropicLLM:
             return await self._client.messages.create(
                 model=self._model,
                 max_tokens=max_output_tokens,
-                # Low, not zero - same contract as the Gemini client: stable summaries so
-                # a failing test means the code changed, not the model's mood.
-                temperature=0.2,
+                # No temperature: the 2.x API dropped sampling knobs entirely - output
+                # stability is the model's job now, not a parameter's. Gemini still takes
+                # one; that difference lives HERE, behind the Protocol, where it belongs.
                 messages=[{"role": "user", "content": prompt}],
             )
 
