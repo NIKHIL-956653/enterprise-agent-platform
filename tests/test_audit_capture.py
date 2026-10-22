@@ -110,7 +110,7 @@ async def _events(tenant_id: str) -> list:
 
 
 async def test_a_run_writes_started_and_finished(client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: FakeLLM())
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM())
     seed = await _seed_tenant()
     body = await _run(client, await _token(client, seed), "summarize", {"text": PARKING * 2})
 
@@ -126,7 +126,7 @@ async def test_a_run_writes_started_and_finished(client, monkeypatch) -> None:
 
 async def test_llm_calls_carry_prompt_and_completion(client, monkeypatch) -> None:
     fake = FakeLLM(answer="Parking is downstairs.")
-    monkeypatch.setattr(runner, "_default_llm", lambda: fake)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: fake)
     seed = await _seed_tenant()
     await _run(client, await _token(client, seed), "summarize", {"text": PARKING * 2})
 
@@ -138,7 +138,7 @@ async def test_llm_calls_carry_prompt_and_completion(client, monkeypatch) -> Non
 
 
 async def test_a_failed_llm_call_is_still_evidence(client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: FakeLLM(fail=True))
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM(fail=True))
     seed = await _seed_tenant()
     body = await _run(client, await _token(client, seed), "summarize", {"text": PARKING * 2})
 
@@ -152,7 +152,7 @@ async def test_a_failed_llm_call_is_still_evidence(client, monkeypatch) -> None:
 
 
 async def test_retrieval_records_chunks_and_scores(client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: FakeLLM(answer="Level two [1]."))
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM(answer="Level two [1]."))
     seed = await _seed_tenant()
     token = await _token(client, seed)
     r = await client.post(
@@ -173,7 +173,7 @@ async def test_retrieval_records_chunks_and_scores(client, monkeypatch) -> None:
 
 
 async def test_pii_never_reaches_the_trail(client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: FakeLLM())
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM())
     seed = await _seed_tenant()
     await _run(client, await _token(client, seed), "summarize", {"text": PII_TEXT})
 
@@ -192,7 +192,7 @@ async def test_pii_never_reaches_the_trail(client, monkeypatch) -> None:
 
 
 async def test_the_chain_still_verifies_after_real_runs(client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: FakeLLM())
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM())
     seed = await _seed_tenant()
     token = await _token(client, seed)
     for _ in range(3):

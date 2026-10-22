@@ -124,7 +124,7 @@ async def _seed_tenant_with_docwriter() -> dict[str, str]:
 
 async def test_docwriter_runs_through_the_platform(client, monkeypatch) -> None:
     llm = ScriptedLLM(["APPROVE"])
-    monkeypatch.setattr(runner, "_default_llm", lambda: llm)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: llm)
     seed = await _seed_tenant_with_docwriter()
     r = await client.post(
         "/v1/auth/login",

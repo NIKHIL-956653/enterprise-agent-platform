@@ -95,7 +95,7 @@ async def _execute(client: Client, tenant_id: str) -> object:
 
 
 async def test_a_workflow_executes_a_real_agent_run(temporal_client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: FakeLLM(answer="Done."))
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM(answer="Done."))
     tenant_id = await _seed_tenant()
 
     result = await _execute(temporal_client, tenant_id)
@@ -124,7 +124,7 @@ async def test_a_workflow_executes_a_real_agent_run(temporal_client, monkeypatch
 
 
 async def test_an_infrastructure_failure_retries_and_recovers(temporal_client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: FakeLLM(answer="Done."))
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM(answer="Done."))
     tenant_id = await _seed_tenant()
 
     real_factory = activities_module.get_session_factory
@@ -149,7 +149,7 @@ async def test_an_infrastructure_failure_retries_and_recovers(temporal_client, m
 async def test_a_failed_model_is_a_result_not_a_retry(temporal_client, monkeypatch) -> None:
     llm_builds: list[int] = []
 
-    def counting_llm():
+    def counting_llm(_slug):
         llm_builds.append(1)
         return FakeLLM(fail=True)
 

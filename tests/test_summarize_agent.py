@@ -93,7 +93,7 @@ async def _run(client: AsyncClient, token: str, payload: dict) -> dict:
 
 async def test_summarize_succeeds_with_fake_llm(client, monkeypatch) -> None:
     fake = FakeLLM(answer="Agents run per tenant; every run is recorded.")
-    monkeypatch.setattr(runner, "_default_llm", lambda: fake)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: fake)
     token = await _token(client, await _seed_tenant_with_summarize())
 
     body = await _run(client, token, {"text": TEXT, "max_sentences": 2})
@@ -105,7 +105,7 @@ async def test_summarize_succeeds_with_fake_llm(client, monkeypatch) -> None:
 
 async def test_prompt_fences_untrusted_text(client, monkeypatch) -> None:
     fake = FakeLLM()
-    monkeypatch.setattr(runner, "_default_llm", lambda: fake)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: fake)
     token = await _token(client, await _seed_tenant_with_summarize())
 
     await _run(client, token, {"text": TEXT})
@@ -116,7 +116,7 @@ async def test_prompt_fences_untrusted_text(client, monkeypatch) -> None:
 
 
 async def test_llm_failure_is_recorded_not_internal(client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: FakeLLM(fail=True))
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM(fail=True))
     token = await _token(client, await _seed_tenant_with_summarize())
 
     body = await _run(client, token, {"text": TEXT})
@@ -127,7 +127,7 @@ async def test_llm_failure_is_recorded_not_internal(client, monkeypatch) -> None
 
 
 async def test_missing_llm_fails_loudly(client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: None)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: None)
     token = await _token(client, await _seed_tenant_with_summarize())
 
     body = await _run(client, token, {"text": TEXT})
@@ -138,7 +138,7 @@ async def test_missing_llm_fails_loudly(client, monkeypatch) -> None:
 
 async def test_too_short_input_is_rejected_before_any_llm_call(client, monkeypatch) -> None:
     fake = FakeLLM()
-    monkeypatch.setattr(runner, "_default_llm", lambda: fake)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: fake)
     token = await _token(client, await _seed_tenant_with_summarize())
 
     r = await client.post(
