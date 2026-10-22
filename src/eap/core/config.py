@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     temporal_address: str = "localhost:7233"
     temporal_task_queue: str = "eap-agent-runs"
 
+    # CORS (EAP-51, for the M5 admin UI). Browsers block a cross-origin fetch unless the
+    # API names the caller's origin, so the Vite dev server must be listed here. JSON list
+    # in env: CORS_ALLOW_ORIGINS=["https://app.example.com"]. The token travels in the
+    # Authorization header, never a cookie, so credentialed CORS stays off.
+    cors_allow_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
+    )
+
     # Rate limiting (M4). Per tenant, per minute, on the run endpoint. 0 disables it.
     # Per-tenant overrides belong on the tenant row later; one global default is enough
     # while every tenant is a demo tenant.
@@ -94,6 +102,10 @@ class Settings(BaseSettings):
             raise ValueError("jwt_secret must be set explicitly in production")
         if self.is_prod and not self.google_api_key:
             raise ValueError("google_api_key must be set in production")
+        if self.is_prod and any("localhost" in o or "127.0.0.1" in o for o in self.cors_allow_origins):
+            # The default exists for dev boxes. Shipped to production it would let any
+            # localhost page a user visits call the API with that user's token.
+            raise ValueError("cors_allow_origins must be set explicitly in production")
         return self
 
 

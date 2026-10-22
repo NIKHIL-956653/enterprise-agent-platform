@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from eap.api.router import api_router
 from eap.core.config import get_settings
@@ -31,6 +32,18 @@ def create_app() -> FastAPI:
     get_settings()  # fail fast: bad config raises here, before the server binds a port
     app = FastAPI(title="Enterprise Agent Platform", version="0.1.0", lifespan=lifespan)
     app.add_middleware(RequestContextMiddleware)
+    # EAP-51: CORS for the admin UI. allow_credentials stays False on purpose - auth is a
+    # bearer header, not a cookie, so no browser sends credentials cross-origin, and the
+    # dangerous ['*']-with-credentials combination can never arise. Starlette echoes only
+    # origins on this list; everything else keeps getting blocked by the browser.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=get_settings().cors_allow_origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["X-Request-ID"],
+    )
     app.include_router(api_router)
     return app
 
