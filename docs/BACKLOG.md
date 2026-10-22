@@ -170,10 +170,10 @@ Last milestone of the English-only scope. Three small backend tickets unblock a 
 | EAP-51 | CORS middleware — origins from settings, prod refuses the localhost default | 🔨 |
 | EAP-52 | `GET /v1/documents` — keyset-paginated list (no bodies), RLS/clearance scoped | ⬜ |
 | EAP-53 | `GET /v1/runs/{id}/audit` — the run's hash chain + computed `chain_ok` | ⬜ |
-| EAP-54 | `web/` scaffold — Vite + React + TS, login screen, token handling | ⬜ |
-| EAP-55 | Agents screen — list, typed run forms, async submit + poll | ⬜ |
-| EAP-56 | Runs screen — history with filters + keyset paging; run detail with audit chain | ⬜ |
-| EAP-57 | Documents screen — list + upload with classification | ⬜ |
+| EAP-54 | `web/` scaffold — Vite + React + TS, login screen, token handling | ✅ |
+| EAP-55 | Agents screen — list, typed run forms, async submit + poll | ✅ |
+| EAP-56 | Runs screen — history with filters + keyset paging; run detail with audit chain | ✅ |
+| EAP-57 | Documents screen — list + upload with classification | ✅ |
 
 ### Sequencing note
 ### (Sprint 4) Sequencing note
