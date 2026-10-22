@@ -130,26 +130,53 @@ protection and a green PR are the only ceremony that earns its keep.
 
 ---
 
-## Sprint 4 — M4 Enterprise hardening (provisional) ⬜
+## Sprint 4 — M4 Enterprise hardening ✅ (EAP-48/49 deferred)
 
-**Not locked.** Three things gate any serious enterprise deployment and none of them exist:
-per-user authorization inside a tenant, a real audit trail, and durable execution. Those
-outrank the admin UI, which is visible but not blocking. That reorders the original
-M4/M5 plan — compliance moves forward, UI moves back.
+Three things gate any serious enterprise deployment, and this sprint built all three:
+per-user authorization inside a tenant (ABAC), a real audit trail, and durable execution.
+They outranked the admin UI, which reordered the original M4/M5 plan — compliance moved
+forward, UI moved back to Sprint 5.
 
 | ID | Title | Status |
 |---|---|---|
-| EAP-40 | ABAC — document classification + principal in the RLS predicate | ⬜ |
-| EAP-41 | Audit trail — append-only, hash-chained, INSERT-only role | ⬜ |
-| EAP-42 | Audit capture points + PII redaction policy | ⬜ |
-| EAP-43 | Temporal — runner as workflow, activities, worker deployment | ⬜ |
-| EAP-44 | Step-level checkpointing + idempotency keys on run requests | ⬜ |
-| EAP-45 | Provider backoff, circuit breaker, bounded per-tenant concurrency | ⬜ |
-| EAP-47 | Per-tenant provider keys via secrets manager (unblocks EAP-26) | ⬜ |
-| EAP-48 | Hybrid retrieval — BM25 alongside vectors, merged by RRF | ⬜ |
-| EAP-49 | Eval harness — context precision and faithfulness on a fixed set | ⬜ |
+| EAP-40 | ABAC — document classification + principal in the RLS predicate | ✅ |
+| EAP-41 | Audit trail — append-only, hash-chained, INSERT-only role | ✅ |
+| EAP-42 | Audit capture points + PII redaction policy | ✅ |
+| EAP-43 | Temporal — runner as workflow, activities, worker deployment | ✅ |
+| EAP-44 | Step-level checkpointing + idempotency keys on run requests | ✅ |
+| EAP-45 | Provider backoff, circuit breaker, bounded per-tenant concurrency | ✅ |
+| EAP-47 | Per-tenant provider keys via secrets manager (unblocks EAP-26) | ✅ |
+| EAP-50 | Anthropic as a second provider behind the LLM Protocol (added mid-sprint) | ✅ |
+| EAP-48 | Hybrid retrieval — BM25 alongside vectors, merged by RRF | ⏸️ |
+| EAP-49 | Eval harness — context precision and faithfulness on a fixed set | ⏸️ |
+
+### How it closed (2026-10-22)
+Everything above except EAP-48/49 is merged (PRs #22–#29). EAP-42 was written
+transport-agnostic as planned, so EAP-43 did not force a rebuild. EAP-50 arrived mid-sprint
+when real Anthropic credits became available; the first live model run then exposed hidden
+SDK retries, fixed in #29 (one retry policy, ours). Live opt-in smoke tests now exist:
+`pytest --live -m live` — four real runs, a few cents. EAP-48/49 stay deferred until the
+conditions below are met.
+
+---
+
+## Sprint 5 — M5 Admin UI 🔨
+
+Last milestone of the English-only scope. Three small backend tickets unblock a Vite + React
++ TS app in `web/`; then four screens, a live-demo screenshot, and the LinkedIn post.
+
+| ID | Title | Status |
+|---|---|---|
+| EAP-51 | CORS middleware — origins from settings, prod refuses the localhost default | 🔨 |
+| EAP-52 | `GET /v1/documents` — keyset-paginated list (no bodies), RLS/clearance scoped | ⬜ |
+| EAP-53 | `GET /v1/runs/{id}/audit` — the run's hash chain + computed `chain_ok` | ⬜ |
+| EAP-54 | `web/` scaffold — Vite + React + TS, login screen, token handling | ⬜ |
+| EAP-55 | Agents screen — list, typed run forms, async submit + poll | ⬜ |
+| EAP-56 | Runs screen — history with filters + keyset paging; run detail with audit chain | ⬜ |
+| EAP-57 | Documents screen — list + upload with classification | ⬜ |
 
 ### Sequencing note
+### (Sprint 4) Sequencing note
 EAP-43 reshapes how a run executes, so audit capture points built before it would be
 rebuilt after it. Either Temporal goes first, or EAP-42 is written transport-agnostic from
 the start. Prefer the second: audit lands sooner and survives the migration.
