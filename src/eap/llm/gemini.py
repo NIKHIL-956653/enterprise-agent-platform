@@ -9,6 +9,7 @@ editing an agent.
 import math
 from functools import lru_cache
 
+import httpx
 from google import genai
 from google.genai import types
 
@@ -25,11 +26,15 @@ def _is_transient(exc: Exception) -> bool:
     code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
     if isinstance(code, int) and code in _TRANSIENT_CODES:
         return True
-    return isinstance(exc, (TimeoutError, ConnectionError, OSError))
+    # google-genai raises httpx's own errors for timeouts and dropped connections
+    # (TransportError covers both), not Python's built-ins - which were all this checked.
+    return isinstance(exc, (httpx.TransportError, TimeoutError, ConnectionError, OSError))
 
 
 @lru_cache
-def _llm_breaker() -> CircuitBreaker:
+def _llm_breaker(scope: str = "platform") -> CircuitBreaker:
+    # Since EAP-47 scoped per key: one tenant's revoked key must not open the circuit
+    # for tenants whose keys work. The embedder stays unscoped - always platform-keyed.
     s = get_settings()
     return CircuitBreaker(
         failure_threshold=s.breaker_failure_threshold,
@@ -51,7 +56,10 @@ def _embed_breaker() -> CircuitBreaker:
 class GeminiLLM:
     """Wraps Google's client so the rest of the app never sees it."""
 
-    def __init__(self, api_key: str, model: str, timeout_seconds: int) -> None:
+    def __init__(
+        self, api_key: str, model: str, timeout_seconds: int, breaker_scope: str = "platform"
+    ) -> None:
+        self._breaker_scope = breaker_scope
         self._client = genai.Client(
             api_key=api_key,
             # An HTTP call with no timeout can hang forever, and asyncio.timeout in the
@@ -80,7 +88,7 @@ class GeminiLLM:
             # Breaker OUTSIDE retry: an open circuit skips the whole retry dance, and the
             # breaker counts post-retry outcomes - one provider blip absorbed by backoff
             # is a success, not a strike.
-            response = await _llm_breaker().call(
+            response = await _llm_breaker(self._breaker_scope).call(
                 lambda: call_with_retry(
                     _call,
                     attempts=s.llm_retry_attempts,

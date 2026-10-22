@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     llm_provider: Literal["gemini", "anthropic"] = "gemini"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-haiku-4-5"
+    # EAP-47: where per-tenant secrets live. "env" reads TENANT_<SLUG>_<NAME> from the
+    # process environment and the .env file. Vault would be a new branch, not a rewrite.
+    secret_backend: Literal["env"] = "env"
     # Embeddings (M3). embedding_dimensions is written into the vector(N) column by
     # migration 0007 — changing it later is a migration AND a re-embed of every chunk, so
     # the column and the client read one value instead of agreeing by hand.

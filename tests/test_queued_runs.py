@@ -92,7 +92,7 @@ async def _poll_until_done(client: AsyncClient, token: str, run_id: str) -> dict
 
 
 async def test_sync_run_returns_the_finished_envelope(client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: FakeLLM(answer="Done."))
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM(answer="Done."))
     seed = await _seed_tenant()
     token = await _token(client, seed)
 
@@ -111,7 +111,7 @@ async def test_sync_run_returns_the_finished_envelope(client, monkeypatch) -> No
 
 
 async def test_async_returns_queued_and_the_run_completes(client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: FakeLLM(answer="Done."))
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM(answer="Done."))
     seed = await _seed_tenant()
     token = await _token(client, seed)
 
@@ -130,7 +130,7 @@ async def test_async_returns_queued_and_the_run_completes(client, monkeypatch) -
 
 
 async def test_the_same_idempotency_key_returns_the_same_run(client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: FakeLLM(answer="Done."))
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM(answer="Done."))
     seed = await _seed_tenant()
     token = await _token(client, seed)
     headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "retry-abc"}
@@ -144,7 +144,7 @@ async def test_the_same_idempotency_key_returns_the_same_run(client, monkeypatch
 
 
 async def test_different_keys_make_different_runs(client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: FakeLLM(answer="Done."))
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM(answer="Done."))
     seed = await _seed_tenant()
     token = await _token(client, seed)
 
@@ -162,7 +162,7 @@ async def test_different_keys_make_different_runs(client, monkeypatch) -> None:
 
 async def test_validation_failure_enqueues_nothing(client, monkeypatch) -> None:
     fake = FakeLLM()
-    monkeypatch.setattr(runner, "_default_llm", lambda: fake)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: fake)
     seed = await _seed_tenant()
     token = await _token(client, seed)
 

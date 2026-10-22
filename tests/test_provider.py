@@ -8,6 +8,8 @@ proves the boundary; the live demo proves the bill.
 
 from types import SimpleNamespace
 
+import anthropic as anthropic_sdk
+import httpx
 import pytest
 
 from eap.core.config import get_settings
@@ -96,6 +98,32 @@ async def test_a_529_overload_is_retried(monkeypatch) -> None:
 
     assert await llm.complete("hello") == "recovered"
     assert len(calls) == 2  # one overload absorbed, no failed run
+
+
+async def test_a_hung_call_is_retried_by_us_not_by_the_sdk(monkeypatch) -> None:
+    # The live run that hung for 60s: the SDK's hidden retries spent the whole budget on
+    # 30s attempts while ours never fired, because a timeout did not count as transient.
+    llm = AnthropicLLM(api_key="k", model="m", timeout_seconds=5)
+    assert llm._client.max_retries == 0  # one retry policy, ours
+    calls = []
+
+    async def _hung_once(**kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise anthropic_sdk.APITimeoutError(request=httpx.Request("POST", "https://api.anthropic.com"))
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text="recovered")])
+
+    monkeypatch.setattr(llm._client.messages, "create", _hung_once)
+
+    assert await llm.complete("hello") == "recovered"
+    assert len(calls) == 2
+
+
+def test_gemini_counts_timeouts_and_drops_as_transient() -> None:
+    request = httpx.Request("POST", "https://generativelanguage.googleapis.com")
+    assert gemini_module._is_transient(httpx.ReadTimeout("slow", request=request))
+    assert gemini_module._is_transient(httpx.ConnectError("refused", request=request))
+    assert not gemini_module._is_transient(ValueError("a bug is not a blip"))
 
 
 async def test_an_empty_response_is_an_error(monkeypatch) -> None:
