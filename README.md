@@ -63,6 +63,20 @@ pytest
 
 API docs at http://localhost:8000/docs.
 
+## Running the UI
+
+The admin console is a Vite + React + TypeScript app in `web/`. With the API running:
+
+```bash
+cd web
+npm install
+npm run dev            # http://localhost:5173
+```
+
+Sign in with the seeded tenant: slug `acme`, `admin@acme.com` / `demo-password-123`.
+The dev server's origin (`localhost:5173`) is the one the API allows by default (EAP-51);
+point the UI at a different API with `VITE_API_BASE`.
+
 **Live tests.** The suite fakes every model call, so it is free and deterministic. To check
 the real vendor as well, put a key in `.env` and run `pytest --live -m live`: four real runs
 through the whole platform, a few cents on Claude Haiku 4.5. Without `--live` they are skipped.
