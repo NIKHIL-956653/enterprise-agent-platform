@@ -24,13 +24,17 @@ def _is_transient(exc: Exception) -> bool:
     code = getattr(exc, "status_code", None)
     if isinstance(code, int) and code in _TRANSIENT_CODES:
         return True
-    return isinstance(exc, (TimeoutError, ConnectionError, OSError))
+    # A dropped connection or a request that hit its deadline. The SDK wraps both in
+    # APIConnectionError (APITimeoutError is a subclass) - never in Python's built-ins,
+    # which were all this checked until a live run hung for a minute.
+    return isinstance(exc, (anthropic.APIConnectionError, TimeoutError, ConnectionError, OSError))
 
 
 @lru_cache
-def _breaker() -> CircuitBreaker:
+def _breaker(scope: str = "platform") -> CircuitBreaker:
     # Anthropic gets its own breaker: Gemini being down must not slam this door, and the
-    # reverse. Per provider, per endpoint, per process - same shape as gemini.py's pair.
+    # reverse. Per provider, per endpoint, per process - and since EAP-47, per key scope:
+    # one tenant's revoked key must not open the circuit for tenants whose keys work.
     s = get_settings()
     return CircuitBreaker(
         failure_threshold=s.breaker_failure_threshold,
@@ -41,11 +45,17 @@ def _breaker() -> CircuitBreaker:
 class AnthropicLLM:
     """Wraps Anthropic's client so the rest of the app never sees it."""
 
-    def __init__(self, api_key: str, model: str, timeout_seconds: int) -> None:
+    def __init__(
+        self, api_key: str, model: str, timeout_seconds: int, breaker_scope: str = "platform"
+    ) -> None:
         # The SDK takes its timeout in seconds and applies it per request - same reasoning
         # as gemini.py: asyncio.timeout upstream cannot interrupt a waiting socket.
-        self._client = anthropic.AsyncAnthropic(api_key=api_key, timeout=timeout_seconds)
+        # max_retries=0: left on, the SDK retries timeouts twice by itself, hidden beneath
+        # call_with_retry - three 30s attempts inside a 60s run budget. One stuck
+        # connection ate a whole live run that way. One retry policy, ours, in sight.
+        self._client = anthropic.AsyncAnthropic(api_key=api_key, timeout=timeout_seconds, max_retries=0)
         self._model = model
+        self._breaker_scope = breaker_scope
 
     async def complete(self, prompt: str, *, max_output_tokens: int = 1024) -> str:
         s = get_settings()
@@ -61,7 +71,7 @@ class AnthropicLLM:
             )
 
         try:
-            response = await _breaker().call(
+            response = await _breaker(self._breaker_scope).call(
                 lambda: call_with_retry(
                     _call,
                     attempts=s.llm_retry_attempts,

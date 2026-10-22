@@ -111,7 +111,7 @@ async def _ask(client: AsyncClient, token: str, question: str) -> dict:
 
 async def test_answers_from_retrieved_chunks_with_citations(client, monkeypatch) -> None:
     llm = ScriptedLLM("Resident parking is in the marina basement, level two [1].")
-    monkeypatch.setattr(runner, "_default_llm", lambda: llm)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: llm)
     token = await _token(client, await _seed_tenant_with_answer())
     await _ingest(client, token, "Parking", PARKING)
 
@@ -132,7 +132,7 @@ async def test_answers_from_retrieved_chunks_with_citations(client, monkeypatch)
 
 async def test_refuses_without_a_model_call_when_nothing_clears_the_floor(client, monkeypatch) -> None:
     llm = ScriptedLLM()  # nothing scripted: any call is a failure
-    monkeypatch.setattr(runner, "_default_llm", lambda: llm)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: llm)
     token = await _token(client, await _seed_tenant_with_answer())
     await _ingest(client, token, "Parking", PARKING)
 
@@ -145,7 +145,7 @@ async def test_refuses_without_a_model_call_when_nothing_clears_the_floor(client
 
 async def test_prompt_fences_passages_and_question(client, monkeypatch) -> None:
     llm = ScriptedLLM("Level two [1].")
-    monkeypatch.setattr(runner, "_default_llm", lambda: llm)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: llm)
     token = await _token(client, await _seed_tenant_with_answer())
     await _ingest(client, token, "Parking", PARKING)
 
@@ -160,7 +160,7 @@ async def test_prompt_fences_passages_and_question(client, monkeypatch) -> None:
 
 async def test_model_saying_not_covered_becomes_a_refusal(client, monkeypatch) -> None:
     llm = ScriptedLLM(f"{NOT_COVERED}.")
-    monkeypatch.setattr(runner, "_default_llm", lambda: llm)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: llm)
     token = await _token(client, await _seed_tenant_with_answer())
     await _ingest(client, token, "Parking", PARKING)
 
@@ -174,7 +174,7 @@ async def test_model_saying_not_covered_becomes_a_refusal(client, monkeypatch) -
 
 
 async def test_hits_but_no_model_fails_loudly(client, monkeypatch) -> None:
-    monkeypatch.setattr(runner, "_default_llm", lambda: None)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: None)
     token = await _token(client, await _seed_tenant_with_answer())
     await _ingest(client, token, "Parking", PARKING)
 
@@ -186,7 +186,7 @@ async def test_hits_but_no_model_fails_loudly(client, monkeypatch) -> None:
 
 async def test_another_tenant_asking_the_exact_words_gets_a_refusal(client, monkeypatch) -> None:
     llm = ScriptedLLM()
-    monkeypatch.setattr(runner, "_default_llm", lambda: llm)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: llm)
     token_a = await _token(client, await _seed_tenant_with_answer())
     token_b = await _token(client, await _seed_tenant_with_answer())
     await _ingest(client, token_a, "Parking", PARKING)
