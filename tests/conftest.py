@@ -21,6 +21,7 @@ from eap.api.health import reset_readiness_cache
 from eap.core.config import get_settings
 from eap.core.db import dispose_engine, dispose_owner_engine
 from eap.core.temporal import dispose_temporal_client, get_temporal_client
+from eap.llm import secrets as tenant_secrets
 from eap.main import app
 from eap.workflows import AgentRunWorkflow
 from eap.workflows.activities import run_agent as run_agent_activity
@@ -40,6 +41,25 @@ def _probe(host: str, port: int, what: str, hint: str) -> None:
         probe.close()
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--live",
+        action="store_true",
+        default=False,
+        help="also run tests marked 'live': real model calls on the keys in .env (costs money)",
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Live tests spend real money, so they never run by accident - not locally, not in CI."""
+    if config.getoption("--live"):
+        return
+    skip = pytest.mark.skip(reason="live test: pass --live to spend real API credits")
+    for item in items:
+        if item.get_closest_marker("live"):
+            item.add_marker(skip)
+
+
 def pytest_sessionstart(session: pytest.Session) -> None:
     """Fail in two seconds if the stack isn't up, not in four minutes.
 
@@ -54,14 +74,26 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _test_env(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
+def _test_env(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> AsyncIterator[None]:
     """
-    Force APP_ENV=test for every test.
+    Force APP_ENV=test for every test, and keep the developer's real model setup out.
 
     Settings is @lru_cache'd, so we clear the cache on both sides - otherwise the first
     test to import config would freeze dev settings for the whole session.
+
+    The model pins exist because .env is shared with the live demo, so it may name a paid
+    provider and a real key. Environment variables outrank .env, so every test starts from
+    the code defaults with no key at all: the suite cannot spend money, and a test that
+    wants a key or a provider sets its own. Per-tenant secrets (EAP-47) are read from .env
+    as well, so tests see none unless they set them. The one exception is tests marked
+    live (opt-in with --live), which exist precisely to run on the real .env.
     """
     monkeypatch.setenv("APP_ENV", "test")
+    if request.node.get_closest_marker("live") is None:
+        monkeypatch.setenv("LLM_PROVIDER", "gemini")
+        monkeypatch.setenv("GOOGLE_API_KEY", "")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        monkeypatch.setattr(tenant_secrets, "_dotenv", lambda: {})
     reset_readiness_cache()
     get_settings.cache_clear()
     yield

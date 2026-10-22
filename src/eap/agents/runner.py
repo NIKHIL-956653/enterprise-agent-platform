@@ -25,6 +25,7 @@ from eap.core.logging import get_logger
 from eap.llm.base import LLM, LLMError
 from eap.llm.provider import get_llm
 from eap.models.agent import Agent, AgentRun, RunStatus
+from eap.models.tenant import Tenant
 from eap.rag import retrieval
 from eap.rag.retrieval import RetrievedChunk
 
@@ -43,13 +44,14 @@ class InvalidAgentInput(Exception):
         self.errors = errors
 
 
-def _default_llm() -> LLM | None:
+def _default_llm(tenant_slug: str | None) -> LLM | None:
     """
     The real model when a key is configured, otherwise None. Dev boxes and CI have no key;
-    that must not stop agents that never touch a model (echo) from running.
+    that must not stop agents that never touch a model (echo) from running. The slug lets
+    the provider answer with the tenant's own key when they brought one (EAP-47).
     """
     try:
-        return get_llm()
+        return get_llm(tenant_slug)
     except LLMError:
         return None
 
@@ -189,7 +191,13 @@ async def execute_agent(
         payload={"agent": agent_name, "input": payload},
     )
 
-    base_llm = llm if llm is not None else _default_llm()
+    if llm is not None:
+        base_llm: LLM | None = llm
+    else:
+        # EAP-47: the tenant's slug names their secrets (TENANT_<SLUG>_*). RLS lets this
+        # session read its own tenant row and nobody else's, so the lookup cannot leak.
+        tenant = await session.get(Tenant, tenant_id)
+        base_llm = _default_llm(tenant.slug if tenant else None)
     base_retriever = retriever if retriever is not None else _bind_retriever(session)
     ctx = AgentContext(
         tenant_id=tenant_id,

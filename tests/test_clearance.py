@@ -212,7 +212,7 @@ async def test_the_answer_agent_refuses_rather_than_citing_what_you_cannot_read(
     assert (await _ingest(client, high, "Board", RESTRICTED_TEXT, RESTRICTED)).status_code == 201
 
     llm = ScriptedLLM()  # nothing scripted: any model call fails the test
-    monkeypatch.setattr(runner, "_default_llm", lambda: llm)
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: llm)
     low = await _token(client, seed, "low")
 
     r = await client.post(

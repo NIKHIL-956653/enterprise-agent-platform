@@ -63,4 +63,8 @@ pytest
 
 API docs at http://localhost:8000/docs.
 
+**Live tests.** The suite fakes every model call, so it is free and deterministic. To check
+the real vendor as well, put a key in `.env` and run `pytest --live -m live`: four real runs
+through the whole platform, a few cents on Claude Haiku 4.5. Without `--live` they are skipped.
+
 ## Layout
