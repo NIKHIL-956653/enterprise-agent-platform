@@ -7,11 +7,13 @@ Every tenant-owned table carries tenant_id pointing here, and Postgres RLS filte
 
 import enum
 
-from sqlalchemy import Enum, String
+from sqlalchemy import Enum, String, text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
+from eap.i18n import Language
 from eap.models.base import Base
-from eap.models.meta import Timestamps, UUIDPk
+from eap.models.meta import Timestamps, UUIDPk, language_type
 
 
 class TenantStatus(enum.StrEnum):
@@ -43,6 +45,22 @@ class Tenant(UUIDPk, Timestamps, Base):
         ),
         default=TenantStatus.ACTIVE,
         server_default=TenantStatus.ACTIVE.value,
+    )
+
+    # What the tenant speaks when nothing more specific is known - for example a user who
+    # never picked a locale.
+    default_language: Mapped[Language] = mapped_column(
+        language_type(), default=Language.EN, server_default=Language.EN.value
+    )
+
+    # Every language this tenant may be served in, default included - migration 0011's
+    # ck_tenants_supported_languages refuses a default the tenant does not support. Plain
+    # strings: the database guards the values, and callers that need a member parse with
+    # Language(code). The default is a callable so every new tenant gets its own list.
+    supported_languages: Mapped[list[str]] = mapped_column(
+        ARRAY(String(8)),
+        default=lambda: [Language.EN.value],
+        server_default=text("'{en}'"),
     )
 
     def __repr__(self) -> str:
