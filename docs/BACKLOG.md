@@ -2,9 +2,9 @@
 
 Every commit references a ticket id. Tickets are closed by a merged PR, not by being "done".
 
-Status: `✅ done` · `🔨 in progress` · `⬜ todo` · `⏸️ deferred`
+Status: `✅ done` · `🔨 in progress` · `⬜ todo` · `⏸️ deferred` · `➡️ superseded`
 
-Last updated: 2026-10-13, end of M3.
+Last updated: 2026-10-27, M6 started.
 
 ---
 
@@ -148,7 +148,7 @@ forward, UI moved back to Sprint 5.
 | EAP-47 | Per-tenant provider keys via secrets manager (unblocks EAP-26) | ✅ |
 | EAP-50 | Anthropic as a second provider behind the LLM Protocol (added mid-sprint) | ✅ |
 | EAP-48 | Hybrid retrieval — BM25 alongside vectors, merged by RRF | ⏸️ |
-| EAP-49 | Eval harness — context precision and faithfulness on a fixed set | ⏸️ |
+| EAP-49 | Eval harness — context precision and faithfulness on a fixed set (→ M8, EAP-L16→L21) | ➡️ |
 
 ### How it closed (2026-10-22)
 Everything above except EAP-48/49 is merged (PRs #22–#29). EAP-42 was written
@@ -160,22 +160,21 @@ conditions below are met.
 
 ---
 
-## Sprint 5 — M5 Admin UI 🔨
+## Sprint 5 — M5 Admin UI ✅
 
 Last milestone of the English-only scope. Three small backend tickets unblock a Vite + React
 + TS app in `web/`; then four screens, a live-demo screenshot, and the LinkedIn post.
 
 | ID | Title | Status |
 |---|---|---|
-| EAP-51 | CORS middleware — origins from settings, prod refuses the localhost default | 🔨 |
-| EAP-52 | `GET /v1/documents` — keyset-paginated list (no bodies), RLS/clearance scoped | ⬜ |
-| EAP-53 | `GET /v1/runs/{id}/audit` — the run's hash chain + computed `chain_ok` | ⬜ |
+| EAP-51 | CORS middleware — origins from settings, prod refuses the localhost default | ✅ |
+| EAP-52 | `GET /v1/documents` — keyset-paginated list (no bodies), RLS/clearance scoped | ✅ |
+| EAP-53 | `GET /v1/runs/{id}/audit` — the run's hash chain + computed `chain_ok` | ✅ |
 | EAP-54 | `web/` scaffold — Vite + React + TS, login screen, token handling | ✅ |
 | EAP-55 | Agents screen — list, typed run forms, async submit + poll | ✅ |
 | EAP-56 | Runs screen — history with filters + keyset paging; run detail with audit chain | ✅ |
 | EAP-57 | Documents screen — list + upload with classification | ✅ |
 
-### Sequencing note
 ### (Sprint 4) Sequencing note
 EAP-43 reshapes how a run executes, so audit capture points built before it would be
 rebuilt after it. Either Temporal goes first, or EAP-42 is written transport-agnostic from
@@ -191,6 +190,36 @@ Also scope-bearing and unanswered in general: where a deployment's documents liv
 (connector work is the most underestimated piece of any RAG build), how often they change,
 how many there are, and what latency users expect.
 
+### How M5 closed (2026-10-22)
+All seven merged (PRs #30–#33; EAP-54→57 landed together in #33). This backlog was not
+updated in those PRs, which is why EAP-51→53 still read 🔨/⬜ after they shipped -
+corrected 2026-10-27. v1.0.0 is not tagged yet.
+
 ### Numbering
-`eap/M6-M10-bilingual-plan.md` still uses EAP-30..73, which now collides with M3 and this
-sprint. Renumber it to EAP-60+ before any of it starts.
+Resolved differently from the note that stood here: the bilingual work (M6–M10) gets its
+own series, EAP-L1→L29, instead of EAP-60+, so v2 reads as one sequence (see Sprint 6).
+
+---
+
+## Sprint 6 — M6 i18n foundation 🔨
+
+First milestone of the bilingual English + Arabic build that ends at v2.0.0. M6 ships no
+user-facing feature. It makes language a stored, first-class field on tenants, users, runs
+and chunks, so M7's concierge has something to stand on. The rule for all of v2: i18n is
+data, not branches - no `if lang == "ar"` in business logic.
+
+Ids: v2 has its own series - M6 EAP-L1→L6 · M7 L7→L15 · M8 L16→L21 · M9 L22→L25 · M10 L26→L29.
+
+| ID | Title | Status |
+|---|---|---|
+| EAP-L1 | Language detection — `Language` enum, deterministic Unicode-script `detect()`, confidence flag | ✅ |
+| EAP-L2 | Migration `0011` — language on tenants, users, agent_runs, document_chunks + CHECK constraints | ⬜ |
+| EAP-L3 | Locale formatting — digits per tenant, AED both languages, Asia/Dubai datetimes, bidi isolates | ⬜ |
+| EAP-L4 | Runner records `language` on every run; `GET /v1/runs?language=` | ⬜ |
+| EAP-L5 | Arabic-aware chunking — ؟ and ؛ end sentences, ، does not; per-chunk language tag | ⬜ |
+| EAP-L6 | ADR-005 "i18n as data, not branches" + catalogue `{en,ar}.yaml` with a key-parity test | ⬜ |
+
+EAP-L1 landed with three tunable thresholds, each pinned by a test: Arabic wins at a 20%
+share of letters (so a Latin building name inside an Arabic question stays Arabic), needs at
+least 2 Arabic letters (so one stray character can't flip a message), and a result is
+`confident` only from 4 letters up - the bar EAP-L14's hysteresis will consume.
