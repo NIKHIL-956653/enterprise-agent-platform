@@ -12,8 +12,9 @@ from sqlalchemy import Enum, ForeignKey, SmallInteger, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from eap.i18n import Language
 from eap.models.base import Base
-from eap.models.meta import Timestamps, UUIDPk
+from eap.models.meta import Timestamps, UUIDPk, language_type
 
 
 class UserRole(enum.StrEnum):
@@ -65,6 +66,12 @@ class User(UUIDPk, Timestamps, Base):
     # "may read restricted documents" are different questions, and an org that conflates
     # them has to promote someone to admin to let them read a document.
     clearance: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+
+    # NULL means "follow the tenant's default_language". Only a user who actively picks a
+    # language gets a value, so switching the tenant to Arabic moves everyone who never
+    # chose. Postgres cannot check this against tenants.supported_languages - a CHECK sees
+    # one row - so the users page (EAP-L22) enforces that in code.
+    locale: Mapped[Language | None] = mapped_column(language_type(), nullable=True)
 
     def __repr__(self) -> str:
         return f"<User {self.email} tenant={self.tenant_id}>"

@@ -15,8 +15,9 @@ from sqlalchemy import Enum, ForeignKey, Index, Integer, String, Text, UniqueCon
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from eap.i18n import Language
 from eap.models.base import Base
-from eap.models.meta import Timestamps, UUIDPk
+from eap.models.meta import Timestamps, UUIDPk, language_type
 
 
 class RunStatus(enum.StrEnum):
@@ -103,6 +104,13 @@ class AgentRun(UUIDPk, Timestamps, Base):
         _enum_col(RunStatus, "runstatus"),
         default=RunStatus.QUEUED,
         server_default=RunStatus.QUEUED.value,
+    )
+
+    # The language the run worked in. 'en' on every row older than M6, which is accurate:
+    # v1 was English-only. The runner starts setting it per run in EAP-L4, which also adds
+    # the ?language= filter on GET /v1/runs.
+    language: Mapped[Language] = mapped_column(
+        language_type(), default=Language.EN, server_default=Language.EN.value
     )
 
     input: Mapped[dict] = mapped_column(JSONB)

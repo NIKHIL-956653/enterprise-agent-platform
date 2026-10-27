@@ -15,8 +15,9 @@ from sqlalchemy import ForeignKey, Index, Integer, SmallInteger, String, Text, U
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from eap.i18n import Language
 from eap.models.base import Base
-from eap.models.meta import Timestamps, UUIDPk
+from eap.models.meta import Timestamps, UUIDPk, language_type
 
 # Frozen in the database by migration 0007. Repeated here rather than read from Settings
 # on purpose: a model whose shape changes with an env var makes `alembic check` pass or
@@ -105,6 +106,13 @@ class DocumentChunk(UUIDPk, Timestamps, Base):
     token_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     classification: Mapped[int] = mapped_column(
         SmallInteger, default=Classification.PUBLIC, server_default="0"
+    )
+
+    # Per chunk, not per document: one upload can hold an English section and an Arabic
+    # one, and retrieval works on chunks. Ingest starts tagging it in EAP-L5; until then
+    # every chunk is 'en', which is what v1 ingested.
+    language: Mapped[Language] = mapped_column(
+        language_type(), default=Language.EN, server_default=Language.EN.value
     )
 
     def __repr__(self) -> str:
