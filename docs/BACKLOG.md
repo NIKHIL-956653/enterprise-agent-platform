@@ -213,7 +213,7 @@ Ids: v2 has its own series - M6 EAP-L1→L6 · M7 L7→L15 · M8 L16→L21 · M9
 | ID | Title | Status |
 |---|---|---|
 | EAP-L1 | Language detection — `Language` enum, deterministic Unicode-script `detect()`, confidence flag | ✅ |
-| EAP-L2 | Migration `0011` — language on tenants, users, agent_runs, document_chunks + CHECK constraints | ⬜ |
+| EAP-L2 | Migration `0011` — language on tenants, users, agent_runs, document_chunks + CHECK constraints | ✅ |
 | EAP-L3 | Locale formatting — digits per tenant, AED both languages, Asia/Dubai datetimes, bidi isolates | ⬜ |
 | EAP-L4 | Runner records `language` on every run; `GET /v1/runs?language=` | ⬜ |
 | EAP-L5 | Arabic-aware chunking — ؟ and ؛ end sentences, ، does not; per-chunk language tag | ⬜ |
@@ -223,3 +223,10 @@ EAP-L1 landed with three tunable thresholds, each pinned by a test: Arabic wins 
 share of letters (so a Latin building name inside an Arabic question stays Arabic), needs at
 least 2 Arabic letters (so one stray character can't flip a message), and a result is
 `confident` only from 4 letters up - the bar EAP-L14's hysteresis will consume.
+
+EAP-L2 landed with five named CHECKs written by hand in `0011`, and building it surfaced a v1
+bug: SQLAlchemy 2.x `Enum(native_enum=False)` creates no CHECK unless `create_constraint=True`,
+so `tenants.status`, `users.role` and `agent_runs.status` are validated in Python only - raw
+SQL can write any string. The fix is a separate v1.0.x ticket, not part of M6.
+`tests/test_language_columns.py` asserts the five new CHECKs exist by name, so the language
+columns cannot quietly fall into the same state.
