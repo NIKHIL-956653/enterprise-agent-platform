@@ -41,6 +41,10 @@ jobs:
         image: temporalio/auto-setup:1.24.2
         env:
           DB: postgres12
+          # auto-setup waits on `nc -z $POSTGRES_SEEDS $DB_PORT` and has no default port:
+          # without this it loops on "Waiting for PostgreSQL" forever and every test that
+          # needs a worker errors. docker-compose.yml always had it; CI did not (EAP-43).
+          DB_PORT: 5432
           POSTGRES_USER: eap
           POSTGRES_PWD: eap
           POSTGRES_SEEDS: postgres
@@ -85,6 +89,34 @@ jobs:
       # migrations apply; this proves they match the code.
       - name: Check for schema drift
         run: alembic check
+
+      # The service has no health check: its port opens before auto-setup has built the
+      # schema and registered the `default` namespace the test workers use. Wait for the
+      # namespace itself, not the port.
+      - name: Wait for Temporal
+        run: |
+          python - <<'EOF'
+          import asyncio, time
+          from temporalio.api.workflowservice.v1 import DescribeNamespaceRequest
+          from temporalio.client import Client
+
+          async def main() -> None:
+              deadline = time.monotonic() + 240
+              while True:
+                  try:
+                      client = await Client.connect("localhost:7233")
+                      await client.workflow_service.describe_namespace(
+                          DescribeNamespaceRequest(namespace="default")
+                      )
+                      print("Temporal ready")
+                      return
+                  except Exception as e:
+                      if time.monotonic() > deadline:
+                          raise SystemExit(f"Temporal not ready after 240s: {e}")
+                      await asyncio.sleep(3)
+
+          asyncio.run(main())
+          EOF
 
       - name: Test
         run: pytest -v
