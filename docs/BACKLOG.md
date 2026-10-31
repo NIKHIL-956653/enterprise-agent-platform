@@ -4,7 +4,7 @@ Every commit references a ticket id. Tickets are closed by a merged PR, not by b
 
 Status: `✅ done` · `🔨 in progress` · `⬜ todo` · `⏸️ deferred` · `➡️ superseded`
 
-Last updated: 2026-10-27, M6 started.
+Last updated: 2026-10-31, demo readiness sprint opened (D1 closed).
 
 ---
 
@@ -83,7 +83,6 @@ to POST without it.
 | EAP-26 | Live Jira/Confluence integration for docwriter | Needs per-tenant secrets — a milestone of its own, not a ticket |
 | EAP-37 | Composite `(created_at, id)` pagination cursor | Timestamp-only cursor can duplicate one row on a boundary tie |
 | EAP-38 | `eap_app` password out of migration `0005` | Hardcoded, public, unrotatable. Fine for a throwaway local DB, nowhere else |
-| EAP-39 | `seed_demo.py` prints a hardcoded agent list | Will drift the next time an agent is added; one-line fix |
 
 ---
 
@@ -193,7 +192,7 @@ how many there are, and what latency users expect.
 ### How M5 closed (2026-10-22)
 All seven merged (PRs #30–#33; EAP-54→57 landed together in #33). This backlog was not
 updated in those PRs, which is why EAP-51→53 still read 🔨/⬜ after they shipped -
-corrected 2026-10-27. v1.0.0 is not tagged yet.
+corrected 2026-10-27. v1.0.0 was tagged on the PR #33 merge (`89f8246`).
 
 ### Numbering
 Resolved differently from the note that stood here: the bilingual work (M6–M10) gets its
@@ -230,3 +229,43 @@ so `tenants.status`, `users.role` and `agent_runs.status` are validated in Pytho
 SQL can write any string. The fix is a separate v1.0.x ticket, not part of M6.
 `tests/test_language_columns.py` asserts the five new CHECKs exist by name, so the language
 columns cannot quietly fall into the same state.
+
+---
+
+## Demo readiness — D1→D8 🔨
+
+v1.0.0 was tested end to end on 2026-10-31: the engine works, the demo tooling did not
+exist. The demo is three colleges, each its own tenant with its own subject PDFs, showing
+that one college cannot see another's material and that a student cannot see faculty-only
+material - and is never told it exists. Built on main as ordinary ticket branches; none of
+it touches the L-series i18n work. D1→D3 block the demo; D4→D8 wait for them.
+
+| ID | Title | Status |
+|---|---|---|
+| D1 | Three-college demo seed (`engg`, `mba`, `bba`; admin clearance 3, student clearance 1) | ✅ |
+| D2 | PDF ingest script — folder per tenant, filename as `external_id`, skips scanned PDFs | ⬜ |
+| D3 | Audit event payloads render as empty boxes on the run detail page | ⬜ |
+| D4 | Human-readable `external_id` for UI uploads (slug, not `upload:<uuid>`) | ⬜ |
+| D5 | Typed run forms for every agent (echo rejects plain text today) | ⬜ |
+| D6 | Optional External ID field on the upload form | ⬜ |
+| D7 | Prompt: no "According to the passage" openers, plus a test | ⬜ |
+| D8 | Confirm echo's 0 ms latency is a measurement, not a missing value | ⬜ |
+| EAP-39 | `seed_demo.py` printed a hardcoded agent list — closed by D1 | ✅ |
+
+### D1 — how it closed
+`scripts/seed_demo.py` now upserts four tenants: `acme` unchanged, plus the three colleges.
+Passwords come from `DEMO_PASSWORD` (environment, then `.env`) with the old dev default.
+Enabled agents come from the registry, which closes EAP-39.
+
+It also fixes the bug that made D1 urgent. The old upsert refreshed only `password_hash`,
+so an `admin@acme.com` row created before migration `0008` kept the column's server
+default, clearance 0, through every re-seed - an owner who could not upload a
+classification-1 document. Role and clearance are now upserted too; re-running the seed
+repairs such a row.
+
+`tests/test_demo_seed.py` proves both demo claims on tenants created by the seed itself,
+through `eap_app` and real JWTs. The strongest test puts classified documents in one
+college, leaves another empty, and asserts a student in each sees byte-identical listings,
+answers, run details and audit payloads: a 403, an "access denied", or any difference at
+all would tell the student the document exists. Tests seed suffixed copies (`engg-1a2b…`)
+so they never write fixtures into the real demo tenants on a shared dev database.
