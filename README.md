@@ -73,7 +73,22 @@ npm install
 npm run dev            # http://localhost:5173
 ```
 
-Sign in with the seeded tenant: slug `acme`, `admin@acme.com` / `demo-password-123`.
+Seed the demo tenants first (idempotent, safe to re-run):
+
+```bash
+python scripts/seed_demo.py
+```
+
+| Tenant slug | Logins | Clearance |
+|---|---|---|
+| `acme` | `admin@acme.com` (owner) | 3 |
+| `engg` | `admin@engg.edu` (admin) · `student@engg.edu` (member) | 3 · 1 |
+| `mba` | `admin@mba.edu` (admin) · `student@mba.edu` (member) | 3 · 1 |
+| `bba` | `admin@bba.edu` (admin) · `student@bba.edu` (member) | 3 · 1 |
+
+Every password is `$DEMO_PASSWORD`, or the dev-only default `demo-password-123` when unset.
+The three colleges are the isolation demo: one college cannot see another's documents, and a
+student (clearance 1) cannot see faculty material classified 2 or 3, nor learn that it exists.
 The dev server's origin (`localhost:5173`) is the one the API allows by default (EAP-51);
 point the UI at a different API with `VITE_API_BASE`.
 
