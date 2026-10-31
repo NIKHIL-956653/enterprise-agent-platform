@@ -18,3 +18,6 @@ Claude outputs/
 # Netlify CLI was run here by mistake once; ignore what it drops
 .netlify/
 netlify.toml
+
+# Demo material for scripts/ingest_pdfs.py - course PDFs are not ours to publish.
+demo-docs/

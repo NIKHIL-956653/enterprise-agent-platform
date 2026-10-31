@@ -4,7 +4,7 @@ Every commit references a ticket id. Tickets are closed by a merged PR, not by b
 
 Status: `✅ done` · `🔨 in progress` · `⬜ todo` · `⏸️ deferred` · `➡️ superseded`
 
-Last updated: 2026-10-31, demo readiness sprint opened (D1 closed).
+Last updated: 2026-10-31, demo readiness sprint (D1, D2 closed; CI repaired).
 
 ---
 
@@ -243,7 +243,7 @@ it touches the L-series i18n work. D1→D3 block the demo; D4→D8 wait for them
 | ID | Title | Status |
 |---|---|---|
 | D1 | Three-college demo seed (`engg`, `mba`, `bba`; admin clearance 3, student clearance 1) | ✅ |
-| D2 | PDF ingest script — folder per tenant, filename as `external_id`, skips scanned PDFs | ⬜ |
+| D2 | PDF ingest script — folder per tenant, filename as `external_id`, skips scanned PDFs | ✅ |
 | D3 | Audit event payloads render as empty boxes on the run detail page | ⬜ |
 | D4 | Human-readable `external_id` for UI uploads (slug, not `upload:<uuid>`) | ⬜ |
 | D5 | Typed run forms for every agent (echo rejects plain text today) | ⬜ |
@@ -251,6 +251,7 @@ it touches the L-series i18n work. D1→D3 block the demo; D4→D8 wait for them
 | D7 | Prompt: no "According to the passage" openers, plus a test | ⬜ |
 | D8 | Confirm echo's 0 ms latency is a measurement, not a missing value | ⬜ |
 | EAP-39 | `seed_demo.py` printed a hardcoded agent list — closed by D1 | ✅ |
+| CI | Temporal service never started in CI (`DB_PORT` unset) — red since EAP-43; PR #37, landed with D1 | ✅ |
 
 ### D1 — how it closed
 `scripts/seed_demo.py` now upserts four tenants: `acme` unchanged, plus the three colleges.
@@ -269,3 +270,29 @@ college, leaves another empty, and asserts a student in each sees byte-identical
 answers, run details and audit payloads: a 403, an "access denied", or any difference at
 all would tell the student the document exists. Tests seed suffixed copies (`engg-1a2b…`)
 so they never write fixtures into the real demo tenants on a shared dev database.
+
+
+### CI was red from EAP-43 to D1
+Found while landing D1: every CI run on main from PR #25 (EAP-43) to #35 failed, v1.0.0
+included. `temporalio/auto-setup` waits on `nc -z $POSTGRES_SEEDS $DB_PORT` with no default
+port; docker-compose set `DB_PORT`, the CI service block did not, so Temporal never started
+and the ~57 tests that need a worker errored at setup. Locally everything passed, which is
+how it went unnoticed. PR #37 adds the port and waits for the `default` namespace before
+pytest; the first green run since 2026-10-14 was 241 passed. Branch protection did not
+stop red merges - worth checking that "require status checks" is actually enabled.
+
+### D2 — how it closed
+`scripts/ingest_pdfs.py` posts through the API, never the database: the JWT picks tenant and
+clearance and RLS checks the write. Decisions worth knowing:
+
+- **Scans are skipped, not posted.** Below 100 non-whitespace characters, or 20 per page,
+  a file counts as having no text (both thresholds are flags).
+- **Long files are split, not truncated.** Above the API's 200,000-character body limit the
+  text is posted in parts on paragraph boundaries. Part 1 keeps the bare file name as its
+  `external_id`, so a file that grows keeps its document; a file that shrinks leaves its old
+  trailing parts behind - delete them by hand, or wait for a delete endpoint.
+- **No built-in password.** `--password`, then `INGEST_PASSWORD`, then `DEMO_PASSWORD`.
+- `pypdf` is the `scripts` extra, not a runtime dependency - the API never parses PDFs.
+
+Not verified in CI: extraction quality on real course PDFs (tests build their own) and real
+embeddings (tests fake them). Both need one local run against `demo-docs/`.
