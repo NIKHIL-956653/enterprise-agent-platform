@@ -89,6 +89,22 @@ python scripts/seed_demo.py
 Every password is `$DEMO_PASSWORD`, or the dev-only default `demo-password-123` when unset.
 The three colleges are the isolation demo: one college cannot see another's documents, and a
 student (clearance 1) cannot see faculty material classified 2 or 3, nor learn that it exists.
+
+Then load each college's PDFs through the API (needs `pip install -e ".[scripts]"` and a
+real embedding key in `.env`). Put files in `demo-docs/<slug>/` (gitignored):
+
+```bash
+python scripts/ingest_pdfs.py                       # demo-docs/{engg,mba,bba}/*.pdf at classification 0
+python scripts/ingest_pdfs.py --tenant engg --classification 3 --layout "faculty/{tenant}/*.pdf"
+python scripts/ingest_pdfs.py --dry-run             # extract and report, post nothing
+```
+
+It logs in as `admin@<slug>.edu` with `$DEMO_PASSWORD` (or `--password`). The file name is
+the `external_id`, so re-running replaces a document's chunks rather than adding to them.
+Scanned PDFs with no extractable text are skipped and reported, never posted as empty
+documents. Every file gets a line: pages, characters extracted, chunks stored, or why it was
+skipped. A file over the API's 200,000-character limit is posted in parts (`notes.pdf`,
+`notes.pdf#2`, ...); if a re-run produces fewer parts, the extra old parts are left in place.
 The dev server's origin (`localhost:5173`) is the one the API allows by default (EAP-51);
 point the UI at a different API with `VITE_API_BASE`.
 
