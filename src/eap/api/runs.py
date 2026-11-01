@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from eap.api import pagination
 from eap.core.deps import get_tenant_session
 from eap.models.agent import Agent, AgentRun, RunStatus
 
@@ -43,8 +44,10 @@ class RunDetail(RunSummary):
 
 class RunPage(BaseModel):
     items: list[RunSummary]
-    # Send this back as ?before=... for the next page. None means there is no next page.
-    next_before: datetime | None
+    # Send this back as ?before=... for the next page, unchanged - it is opaque. None means
+    # there is no next page. It names (created_at, id), so two runs sharing a timestamp on a
+    # page boundary are neither skipped nor repeated (EAP-37, eap.api.pagination).
+    next_before: str | None
 
 
 def _summary(run: AgentRun, agent_name: str) -> RunSummary:
@@ -64,7 +67,7 @@ def _summary(run: AgentRun, agent_name: str) -> RunSummary:
 async def list_runs(
     session: Annotated[AsyncSession, Depends(get_tenant_session)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    before: Annotated[datetime | None, Query()] = None,
+    before: Annotated[str | None, Query()] = None,
     agent: Annotated[str | None, Query()] = None,
     run_status: Annotated[RunStatus | None, Query(alias="status")] = None,
 ) -> RunPage:
@@ -73,10 +76,7 @@ async def list_runs(
     (tenant_id, created_at DESC) index the same way, so page 500 costs what page 1 costs.
     OFFSET would make Postgres read and discard 10,000 rows to show you page 500.
     """
-    if before is not None and before.tzinfo is None:
-        # created_at is timestamptz. Comparing it to a naive datetime raises inside asyncpg
-        # as a 500; better to tell the caller what is wrong.
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "before must include a timezone")
+    cursor = pagination.parse(before)
 
     stmt = (
         select(AgentRun, Agent.name)
@@ -84,8 +84,8 @@ async def list_runs(
         .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
         .limit(limit + 1)  # one extra row tells us whether a next page exists
     )
-    if before is not None:
-        stmt = stmt.where(AgentRun.created_at < before)
+    if cursor is not None:
+        stmt = stmt.where(pagination.older_than(cursor, AgentRun.created_at, AgentRun.id))
     if agent is not None:
         stmt = stmt.where(Agent.name == agent)
     if run_status is not None:
@@ -94,7 +94,11 @@ async def list_runs(
     rows = (await session.execute(stmt)).all()
     has_more = len(rows) > limit
     items = [_summary(run, name) for run, name in rows[:limit]]
-    return RunPage(items=items, next_before=items[-1].created_at if has_more else None)
+    last = items[-1] if has_more else None
+    return RunPage(
+        items=items,
+        next_before=pagination.encode(last.created_at, last.run_id) if last is not None else None,
+    )
 
 
 @router.get("/{run_id}", response_model=RunDetail)
