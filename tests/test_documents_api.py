@@ -5,6 +5,7 @@ The embedder is faked - deterministic vectors, no network, no key needed. Everyt
 real: the route, the token, the tenant-scoped session, RLS, and Postgres with pgvector.
 """
 
+import re
 import uuid
 
 import pytest
@@ -245,3 +246,77 @@ async def test_another_tenant_cannot_see_the_document(client: AsyncClient) -> No
                 )
             ).scalar_one()
             assert count == 1
+
+
+# --- D4: a readable external_id when the caller supplies none ----------------------------
+
+
+async def test_an_omitted_external_id_is_a_slug_of_the_title(client: AsyncClient) -> None:
+    seed = await _seed_tenant()
+    token = await _token(client, seed)
+
+    r = await _post(client, token, title="Marina Handbook (2026)!", body=BODY)
+
+    assert r.status_code == 201, r.text
+    xid = r.json()["external_id"]
+    assert re.fullmatch(r"marina-handbook-2026-[0-9a-f]{8}", xid), xid
+    # The same id is what the list - and the answer agent's citations - will show.
+    listing = await client.get("/v1/documents", headers={"Authorization": f"Bearer {token}"})
+    assert [d["external_id"] for d in listing.json()["items"]] == [xid]
+
+
+async def test_the_same_title_twice_without_an_id_is_two_documents(client: AsyncClient) -> None:
+    # "Omitted means a new document every time" survives the readable id.
+    seed = await _seed_tenant()
+    token = await _token(client, seed)
+
+    a = (await _post(client, token, title="Syllabus", body=BODY)).json()
+    b = (await _post(client, token, title="Syllabus", body=BODY)).json()
+
+    assert a["document_id"] != b["document_id"]
+    assert a["external_id"] != b["external_id"]
+    assert a["external_id"].startswith("syllabus-") and b["external_id"].startswith("syllabus-")
+
+
+async def test_a_suffix_collision_draws_again_rather_than_replacing(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Force the random suffix to repeat once. The second post must get a fresh id, never
+    # the first document's - replacing an unrelated document would be silent data loss.
+    draws = iter(["aaaaaaaa", "aaaaaaaa", "bbbbbbbb"])
+    monkeypatch.setattr(ingest, "_suffix", lambda: next(draws))
+    seed = await _seed_tenant()
+    token = await _token(client, seed)
+
+    a = (await _post(client, token, title="Syllabus", body=BODY)).json()
+    b = (await _post(client, token, title="Syllabus", body=BODY)).json()
+
+    assert a["external_id"] == "syllabus-aaaaaaaa"
+    assert b["external_id"] == "syllabus-bbbbbbbb"
+    assert a["document_id"] != b["document_id"]
+
+
+async def test_an_explicit_external_id_is_used_verbatim(client: AsyncClient) -> None:
+    seed = await _seed_tenant()
+    token = await _token(client, seed)
+
+    r = await _post(client, token, title="Marina", body=BODY, external_id="Thermo Notes (v2).pdf")
+
+    assert r.json()["external_id"] == "Thermo Notes (v2).pdf"
+
+
+@pytest.mark.parametrize(
+    ("title", "slug"),
+    [
+        ("Marina Handbook", "marina-handbook"),
+        ("  Thermodynamics — Unit 1 / Part A  ", "thermodynamics-unit-1-part-a"),
+        # Letters in any script survive; only spaces and punctuation become '-'. A title in
+        # Arabic must not collapse to "document".
+        ("دليل المرسى", "دليل-المرسى"),
+        ("!!! ???", "document"),
+        ("x" * 100, "x" * ingest.SLUG_MAX),
+        ("Ends with punctuation...", "ends-with-punctuation"),
+    ],
+)
+def test_slugify(title: str, slug: str) -> None:
+    assert ingest.slugify(title) == slug

@@ -245,9 +245,9 @@ it touches the L-series i18n work. D1→D3 block the demo; D4→D8 wait for them
 | D1 | Three-college demo seed (`engg`, `mba`, `bba`; admin clearance 3, student clearance 1) | ✅ |
 | D2 | PDF ingest script — folder per tenant, filename as `external_id`, skips scanned PDFs | ✅ |
 | D3 | Audit event payloads render as empty boxes on the run detail page | ⬜ |
-| D4 | Human-readable `external_id` for UI uploads (slug, not `upload:<uuid>`) | ⬜ |
+| D4 | Human-readable `external_id` for UI uploads (slug, not `upload:<uuid>`) | ✅ |
 | D5 | Typed run forms for every agent (echo rejects plain text today) | ⬜ |
-| D6 | Optional External ID field on the upload form | ⬜ |
+| D6 | Optional External ID field on the upload form | ✅ |
 | D7 | Prompt: no "According to the passage" openers, plus a test | ✅ |
 | D8 | Confirm echo's 0 ms latency is a measurement, not a missing value | ⬜ |
 | EAP-39 | `seed_demo.py` printed a hardcoded agent list — closed by D1 | ✅ |
@@ -306,3 +306,25 @@ leading opener, never one carrying a `[n]` citation (stripping must not drop a s
 anything unrecognised is left exactly as the model wrote it. The live suite now checks the
 RAW completion from the run's audit trail, so `pytest --live` still tells you whether the
 prompt itself works on a real model, not just the strip.
+
+### D4 + D6 — how they closed
+A document posted without an `external_id` now gets `slug(title)-<8 hex>`, e.g.
+`marina-handbook-3f9a2c1d`, instead of `upload:<uuid>`; letters in any script survive the
+slug, so an Arabic title keeps its letters. Two decisions worth knowing:
+
+- **The suffix is random, and the insert is `ON CONFLICT DO NOTHING` with a retry.** So
+  "omitted means a new document every time" still holds, and an auto id can never replace an
+  unrelated document that shares a title. The alternative - a plain slug with a lookup for
+  collisions - was rejected on purpose: the lookup would run under RLS, which hides documents
+  above the caller's clearance, so an id scheme that asked "is `exam-key` taken?" would tell
+  a student that a restricted document with that title exists.
+- **Explicit ids are untouched.** Re-posting the same `external_id` still replaces the
+  document's chunks (`test_reposting_the_same_external_id_replaces_it`), and
+  `scripts/ingest_pdfs.py` keeps using the raw file name as its explicit id - the natural key
+  of a file, where the title is the natural key of a UI upload.
+
+The upload form gained an optional External ID field with a hint, and the success banner
+names the id the API chose. When the id returned is already on screen the banner says
+"Replaced", so the live demo is: upload with an id, upload again with the same id, one row,
+flat chunk count. `web/` is outside CI; `tsc -b`, `vite build` and a Chromium check were run
+by hand.
