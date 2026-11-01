@@ -80,13 +80,26 @@ def auto_external_id(title: str) -> str:
     return f"{slugify(title)}-{_suffix()}"
 
 
+# Uniqueness is (tenant_id, classification, external_id) since migration 0012 (EAP-61,
+# ADR-006). A re-post therefore only ever conflicts with a row at the SAME classification -
+# one the caller can see, because they are writing at that level. A copy of the id above
+# their clearance is not in their way, so there is nothing for RLS to refuse and nothing for
+# the response to reveal.
 _UPSERT_BY_EXTERNAL_ID = text(
     "INSERT INTO documents (id, tenant_id, external_id, title, source, classification) "
     "VALUES (gen_random_uuid(), :tid, :xid, :title, :source, :cls) "
-    "ON CONFLICT (tenant_id, external_id) DO UPDATE "
-    "SET title = EXCLUDED.title, source = EXCLUDED.source, "
-    "    classification = EXCLUDED.classification, updated_at = now() "
+    "ON CONFLICT (tenant_id, classification, external_id) DO UPDATE "
+    "SET title = EXCLUDED.title, source = EXCLUDED.source, updated_at = now() "
     "RETURNING id"
+)
+
+# Re-posting an id at a new classification is how a document gets reclassified, so the copy
+# at the old level goes - but only if the caller can see it. RLS scopes this DELETE like every
+# other statement: a copy above their clearance is untouched and unmentioned. It runs on every
+# explicit-id ingest whether or not such a copy exists, so neither the response nor the work
+# done depends on what the caller cannot see. Chunks follow by ON DELETE CASCADE.
+_DROP_VISIBLE_COPIES_AT_OTHER_LEVELS = text(
+    "DELETE FROM documents WHERE tenant_id = :tid AND external_id = :xid AND classification <> :cls"
 )
 
 # DO NOTHING, not DO UPDATE: an auto-generated id must never replace a document that happens
@@ -95,7 +108,7 @@ _UPSERT_BY_EXTERNAL_ID = text(
 _INSERT_FRESH = text(
     "INSERT INTO documents (id, tenant_id, external_id, title, source, classification) "
     "VALUES (gen_random_uuid(), :tid, :xid, :title, :source, :cls) "
-    "ON CONFLICT (tenant_id, external_id) DO NOTHING "
+    "ON CONFLICT (tenant_id, classification, external_id) DO NOTHING "
     "RETURNING id"
 )
 
@@ -116,7 +129,8 @@ async def ingest_document(
 
     `external_id` is the caller's own identifier - a Jira key, a Confluence page id, a
     filename. Re-posting the same one replaces its chunks instead of adding a second near
-    duplicate that competes with the first for every query.
+    duplicate that competes with the first for every query. Re-posting it at a different
+    classification moves the document there, for every copy the caller can see (ADR-006).
 
     `classification` is the sensitivity level (0 public .. 3 restricted). The RLS policy's
     WITH CHECK rejects a value above the caller's own clearance, so this needs no guard
@@ -133,6 +147,7 @@ async def ingest_document(
 
     params = {"tid": str(tenant_id), "title": title, "source": source, "cls": int(classification)}
     if external_id:
+        await session.execute(_DROP_VISIBLE_COPIES_AT_OTHER_LEVELS, {**params, "xid": external_id})
         document_id = (
             await session.execute(_UPSERT_BY_EXTERNAL_ID, {**params, "xid": external_id})
         ).scalar_one()

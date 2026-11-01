@@ -12,6 +12,8 @@ No tenant_id is ever sent - the token carries it.
 
 Re-running is safe. external_id is the file name, and /v1/documents replaces a document's
 chunks when the same external_id comes back, so a second run leaves the chunk count flat.
+Re-running with a different --classification moves each document to that level: the copy at
+the old level is replaced as long as the login can see it (an admin can; see ADR-006).
 
 A PDF that yields no text (a scan, an image-only export) is SKIPPED and reported, never
 posted. An empty document that looks ingested is worse than a visible failure: the answer
