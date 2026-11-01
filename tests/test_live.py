@@ -154,6 +154,12 @@ async def _run(client: AsyncClient, token: str, agent: str, payload: dict) -> di
     pytest.fail(f"{agent} run {run_id} never finished")
 
 
+async def _audit(client: AsyncClient, token: str, run_id: str) -> list[dict]:
+    r = await client.get(f"/v1/runs/{run_id}/audit", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200, r.text
+    return r.json()["events"]
+
+
 async def _llm_calls(tenant_id: str, run_id: str) -> list[dict]:
     async with get_session_factory()() as s:
         await s.execute(text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": tenant_id})
@@ -200,6 +206,12 @@ async def test_answer_cites_the_document_it_used(client: AsyncClient) -> None:
     assert out["citations"], out  # a grounded answer names its sources
     assert {c["document_title"] for c in out["citations"]} == {"Marina handbook"}
     assert any(w in out["answer"].lower() for w in ("basement", "level two", "level 2")), out["answer"]
+    # D7: the prompt, not just strip_preamble, should keep a real model off this opener. Check
+    # the raw completion in the run's own audit trail, before the strip touched it.
+    calls = [e for e in await _audit(client, token, run["run_id"]) if e["event_type"] == "llm.call"]
+    assert calls, "answered without a recorded model call"
+    raw = calls[-1]["payload"]["completion"].lower()
+    assert "according to the passage" not in raw, raw
 
 
 async def test_answer_refuses_what_the_documents_do_not_cover(client: AsyncClient) -> None:

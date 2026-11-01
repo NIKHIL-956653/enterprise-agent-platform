@@ -248,7 +248,7 @@ it touches the L-series i18n work. D1→D3 block the demo; D4→D8 wait for them
 | D4 | Human-readable `external_id` for UI uploads (slug, not `upload:<uuid>`) | ⬜ |
 | D5 | Typed run forms for every agent (echo rejects plain text today) | ✅ |
 | D6 | Optional External ID field on the upload form | ⬜ |
-| D7 | Prompt: no "According to the passage" openers, plus a test | ⬜ |
+| D7 | Prompt: no "According to the passage" openers, plus a test | ✅ |
 | D8 | Confirm echo's 0 ms latency is a measurement, not a missing value | ⬜ |
 | EAP-39 | `seed_demo.py` printed a hardcoded agent list — closed by D1 | ✅ |
 | CI | Temporal service never started in CI (`DB_PORT` unset) — red since EAP-43; PR #37, landed with D1 | ✅ |
@@ -296,6 +296,16 @@ clearance and RLS checks the write. Decisions worth knowing:
 
 Not verified in CI: extraction quality on real course PDFs (tests build their own) and real
 embeddings (tests fake them). Both need one local run against `demo-docs/`.
+
+### D7 — how it closed
+Two layers, because a prompt alone only lowers the odds. The `answer` prompt now says to
+start with the answer and never mention the passages, naming the phrase to avoid. Then
+`strip_preamble()` removes a leading "According to the passage," / "Based on the provided
+passages," / "The passage states that" and re-capitalises. It is deliberately narrow: only a
+leading opener, never one carrying a `[n]` citation (stripping must not drop a source), and
+anything unrecognised is left exactly as the model wrote it. The live suite now checks the
+RAW completion from the run's audit trail, so `pytest --live` still tells you whether the
+prompt itself works on a real model, not just the strip.
 
 ### D5 — how it closed
 The four hand-written forms and the raw-JSON fallback are gone. `GET /v1/agents` now carries
