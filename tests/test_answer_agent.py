@@ -14,7 +14,7 @@ from httpx import AsyncClient
 from sqlalchemy import text
 
 from eap.agents import runner
-from eap.agents.answer import NOT_COVERED, REFUSAL
+from eap.agents.answer import NOT_COVERED, REFUSAL, strip_preamble
 from eap.core.db import get_owner_session_factory
 from eap.core.security import hash_password
 from eap.rag import ingest
@@ -197,3 +197,67 @@ async def test_another_tenant_asking_the_exact_words_gets_a_refusal(client, monk
     assert body["output"]["answered"] is False
     assert body["output"]["citations"] == []
     assert llm.prompts == []
+
+
+# --- D7: no "According to the passage" ----------------------------------------------------
+# The phrase reads like a homework answer, and it varied between two identical live runs, so
+# it is model variance, not a string in our code. The prompt forbids it; strip_preamble makes
+# the guarantee deterministic. The live suite (pytest --live) checks the prompt on a real model.
+
+
+async def test_prompt_forbids_mentioning_the_passages(client, monkeypatch) -> None:
+    llm = ScriptedLLM("Level two [1].")
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: llm)
+    token = await _token(client, await _seed_tenant_with_answer())
+    await _ingest(client, token, "Parking", PARKING)
+
+    await _ask(client, token, ON_TOPIC)
+
+    prompt = llm.prompts[0]
+    rules = prompt[prompt.index("Rules:") : prompt.index("<passage")]
+    assert "Never mention the passages" in rules
+    assert "According to the passage" in rules  # named, so the model knows what not to write
+
+
+async def test_an_according_to_the_passage_opener_never_reaches_the_reader(client, monkeypatch) -> None:
+    llm = ScriptedLLM("According to the passage, resident parking is in the marina basement [1].")
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: llm)
+    token = await _token(client, await _seed_tenant_with_answer())
+    await _ingest(client, token, "Parking", PARKING)
+
+    out = (await _ask(client, token, ON_TOPIC))["output"]
+
+    assert out["answered"] is True
+    assert "according to the passage" not in out["answer"].lower()
+    assert out["answer"] == "Resident parking is in the marina basement [1]."
+    assert [c["passage"] for c in out["citations"]] == [1]
+
+
+@pytest.mark.parametrize(
+    ("completion", "expected"),
+    [
+        ("According to the passage, the pool opens at 6 [1].", "The pool opens at 6 [1]."),
+        ("According to the passages, the pool opens at 6 [1].", "The pool opens at 6 [1]."),
+        ("according to the provided context: the pool opens at 6 [1].", "The pool opens at 6 [1]."),
+        ("Based on the provided passages, the fee is 20 AED [2].", "The fee is 20 AED [2]."),
+        ("Based solely on the documents, the fee is 20 AED [2].", "The fee is 20 AED [2]."),
+        ("The passage states that the pool opens at 6 [1].", "The pool opens at 6 [1]."),
+        ("The passages indicate the gym closes at 10 [3].", "The gym closes at 10 [3]."),
+    ],
+)
+def test_openers_are_stripped_and_the_answer_recapitalised(completion: str, expected: str) -> None:
+    assert strip_preamble(completion) == expected
+
+
+@pytest.mark.parametrize(
+    "completion",
+    [
+        "Resident parking is on level two [1].",  # already direct
+        "The ferry passage takes 20 minutes [1].",  # 'passage' as a word, not the opener
+        "According to passage [2], the gate code changes monthly.",  # carries a citation: keep it
+        "Visitors park by the pool; according to the passage on fees, it is free [1].",  # not leading
+        "According to the passage,",  # nothing would be left: keep the original
+    ],
+)
+def test_anything_else_is_left_exactly_as_written(completion: str) -> None:
+    assert strip_preamble(completion) == completion
