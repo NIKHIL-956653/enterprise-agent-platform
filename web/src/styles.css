@@ -300,6 +300,32 @@ form.panel,
   gap: 12px;
 }
 
+/* ---- typed agent forms (D5) ---- */
+input.invalid,
+textarea.invalid {
+  border-color: var(--danger);
+}
+.field-error {
+  color: var(--danger);
+  font-size: 12.5px;
+}
+.field .help {
+  font-size: 12px;
+}
+details.advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+details.advanced > summary {
+  cursor: pointer;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+details.advanced > label + label {
+  margin-top: 12px;
+}
+
 /* ---- agents ---- */
 .agent-list {
   display: flex;

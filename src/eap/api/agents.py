@@ -40,6 +40,11 @@ class AgentSummary(BaseModel):
     display_name: str
     is_enabled: bool
     has_implementation: bool
+    # The agent's InputModel as JSON Schema (D5). The admin UI renders its run form from
+    # this, so field names, required-ness and limits come from the one place the API also
+    # validates against - a form cannot drift from the model it submits to. None when no
+    # code serves the agent (has_implementation is False).
+    input_schema: dict[str, Any] | None = None
 
 
 class RunResponse(BaseModel):
@@ -71,6 +76,7 @@ async def list_agents(
             display_name=r.display_name,
             is_enabled=r.is_enabled,
             has_implementation=r.name in available,
+            input_schema=get_agent(r.name).InputModel.model_json_schema() if r.name in available else None,
         )
         for r in rows
     ]
