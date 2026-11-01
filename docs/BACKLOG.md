@@ -376,7 +376,7 @@ missed. None is demo-blocking; two are security-relevant. Recorded 2026-11-01.
 | EAP-58 | Vector retrieval has no index — and adding HNSW needs a decision first | No tenant is near ADR-003's trigger (p95 > 200 ms or 100k chunks) |
 | EAP-59 | Per-tenant provider keys are plaintext at rest in the only secret backend | Dev/demo backend by design; a KMS or Vault backend is a milestone, not a ticket |
 | EAP-60 | Branch protection on `main` does not require the CI check to pass | Repo setting, no code; red PRs #25–#35 merged because of it |
-| EAP-61 | `POST /v1/documents` is an existence oracle for restricted `external_id`s | Needs a semantics decision on id uniqueness, not a patch |
+| EAP-61 | `POST /v1/documents` is an existence oracle for restricted `external_id`s | ✅ closed by ADR-006 + migration `0012` |
 
 ### EAP-58 — Vector retrieval has no index
 **Type:** scaling · **Status:** ⬜ todo
@@ -447,7 +447,7 @@ marked required. Fix in the repository settings, no code: require `test`, and co
 moved. Until then, "CI must be green before you merge" is a habit, not a property.
 
 ### EAP-61 — The document write path reveals restricted `external_id`s
-**Type:** security · **Status:** ⬜ todo
+**Type:** security · **Status:** ✅ done (ADR-006, migration `0012`)
 
 Reproduced 2026-11-01 on the demo seed. `admin@engg.edu` ingests "Exam answer key" with
 `external_id` `exam-key` at classification 3. `student@engg.edu` (clearance 1) lists
@@ -469,3 +469,13 @@ reclassifying the first; (b) keep the contract and make probing *detectable*: au
 `document.write_refused` event with the attempted id, and rate-limit refused writes per
 user; (c) namespace auto and explicit ids per clearance level. D4 was designed so the
 auto-generated ids never touch this (random suffix, `DO NOTHING`); explicit ids still do.
+
+**Closed 2026-11-01.** ADR-006 records the options. Chosen: uniqueness becomes
+`(tenant_id, classification, external_id)`, so a re-post only ever conflicts with a row at
+the level being written - one the caller can see - and before the upsert every copy of that
+id the caller *can* see at another level is deleted, so "re-posting replaces" still holds
+across a reclassification. A student probing a restricted id and a free id now get responses
+identical in status, headers and body apart from generated ids; their own re-post still
+replaces; an admin's re-post at a new level still moves the document. Consequence, on the
+record: one `external_id` can exist at several classifications within a tenant. The
+downgrade is reversible only while that has not happened, and fails loudly otherwise.
