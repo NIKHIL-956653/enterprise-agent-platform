@@ -16,6 +16,7 @@ A refusal is a SUCCEEDED run with answered=false, not a failure. "The documents 
 is a correct answer, and callers need to branch on it without parsing prose.
 """
 
+import re
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -33,6 +34,9 @@ REFUSAL = "The documents available to this tenant do not cover that question."
 _PROMPT = """You answer questions using only the passages provided.
 
 Rules:
+- Start with the answer itself, stated directly, as a subject expert would.
+- Never mention the passages, the context or the documents in your answer. Do not open with
+  "According to the passage", "Based on the provided passages" or similar.
 - Use only information inside the <passage> tags. Do not use outside knowledge.
 - Cite every fact with the passage number in square brackets, like [1] or [2].
 - If the passages do not contain the answer, reply with exactly {not_covered} and nothing else.
@@ -43,6 +47,34 @@ Rules:
 <question>
 {question}
 </question>"""
+
+
+# The prompt asks for no "According to the passage" opener, but a prompt only lowers the odds:
+# two identical runs differed on exactly this. So the opener is also stripped here, which is
+# what makes the guarantee testable. Deliberately narrow - only a LEADING phrase that names
+# the passages/context/documents, and never one carrying a [n] citation, so stripping cannot
+# drop a source. Anything it does not recognise is left exactly as the model wrote it.
+_PREAMBLE = re.compile(
+    r"""^\s*(?:
+        (?:according\s+to|based\s+(?:solely\s+|only\s+)?on|as\s+(?:stated|described|mentioned)\s+in|per)
+        \s+(?:the\s+)?(?:provided\s+|given\s+|above\s+|supplied\s+)?
+        (?:passages?|context|documents?|text|information|sources?)
+        (?:\s+(?:provided|given|above))?
+        \s*[,:]
+      |
+        the\s+(?:provided\s+|given\s+)?(?:passages?|context|documents?|text)
+        \s+(?:states?|says?|indicates?|mentions?|explains?|notes?)(?:\s+that)?
+    )\s*""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def strip_preamble(answer: str) -> str:
+    """Drop a leading 'According to the passage,'-style opener and re-capitalise."""
+    rest = _PREAMBLE.sub("", answer, count=1)
+    if rest == answer or not rest.strip():
+        return answer
+    return rest[0].upper() + rest[1:]
 
 
 def _render_passages(chunks: list[RetrievedChunk]) -> str:
@@ -116,7 +148,7 @@ class AnswerAgent(BaseAgent):
             return AnswerOutput(answer=REFUSAL, answered=False, citations=[])
 
         return AnswerOutput(
-            answer=completion.strip(),
+            answer=strip_preamble(completion.strip()),
             answered=True,
             citations=[
                 Citation(
