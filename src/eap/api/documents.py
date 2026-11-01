@@ -29,8 +29,9 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 class IngestRequest(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     body: str = Field(min_length=1, max_length=200_000)
-    # The caller's own id for this source. Omitted means "a new document every time"; supplied
-    # means "this is the same document as last time", and re-posting replaces it.
+    # The caller's own id for this source. Supplied means "this is the same document as last
+    # time", and re-posting replaces its chunks. Omitted means a new document every time,
+    # under an id derived from the title: "marina-handbook-3f9a2c1d" (D4).
     external_id: str | None = Field(default=None, max_length=200)
     source: str = Field(default="upload", max_length=50)
     # 0 public, 1 internal, 2 confidential, 3 restricted. Above your own clearance is

@@ -112,6 +112,29 @@ async def test_a_clean_run_verifies_end_to_end(client: AsyncClient, monkeypatch)
         assert len(e["hash"]) == 64 and len(e["prev_hash"]) == 64
 
 
+async def test_every_event_carries_a_populated_payload(client: AsyncClient, monkeypatch) -> None:
+    """
+    D3: the run page showed an empty box under every event. The data was never missing -
+    the rows were collapsed. This pins the API side, so if a box is ever empty again the
+    fault is known to be in rendering, not in recording.
+    """
+    monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM())
+    seed = await _seed_tenant()
+    token = await _token(client, seed)
+    run_id = await _run_summarize(client, token)
+
+    events = {e["event_type"]: e["payload"] for e in (await _audit(client, token, run_id)).json()["events"]}
+
+    for name, payload in events.items():
+        assert isinstance(payload, dict) and payload, f"{name} payload is empty"
+    assert events["run.started"]["agent"] == "summarize"
+    assert events["run.started"]["input"]["text"] == TEXT_IN
+    assert TEXT_IN in events["llm.call"]["prompt"]
+    assert events["llm.call"]["completion"]
+    assert events["run.finished"]["status"] == "succeeded"
+    assert isinstance(events["run.finished"]["latency_ms"], int)
+
+
 async def test_another_tenants_run_is_404(client: AsyncClient, monkeypatch) -> None:
     monkeypatch.setattr(runner, "_default_llm", lambda _slug: FakeLLM())
     seed_a = await _seed_tenant()
