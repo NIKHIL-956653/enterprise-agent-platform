@@ -82,7 +82,12 @@ to POST without it.
 | EAP-25 | LLM as a FastAPI dependency (`dependency_overrides` instead of monkeypatch) | Works today; the fix is cosmetic until a second injected service exists |
 | EAP-26 | Live Jira/Confluence integration for docwriter | Needs per-tenant secrets — a milestone of its own, not a ticket |
 | EAP-37 | Composite `(created_at, id)` pagination cursor | Timestamp-only cursor can duplicate one row on a boundary tie |
-| EAP-38 | `eap_app` password out of migration `0005` | Hardcoded, public, unrotatable. Fine for a throwaway local DB, nowhere else |
+
+EAP-38 closed 2026-11-01: migration `0005` now creates `eap_app` with the password inside
+`APP_DATABASE_URL` - the URL the app logs in with, so the two cannot drift - via a
+transaction-local setting and `format('%L')`, never string-built SQL. Unset means the old dev
+default, so local setup is unchanged and nothing secret is committed. Rotation is
+`ALTER ROLE eap_app PASSWORD` plus the URL, documented in `.env.example`.
 
 ---
 
