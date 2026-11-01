@@ -384,16 +384,40 @@ details.advanced > label + label {
 .event.bad {
   border-color: rgba(255, 107, 107, 0.5);
 }
-.event summary {
-  cursor: pointer;
+.event-head {
   display: flex;
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
-  list-style: none;
 }
-.event summary::-webkit-details-marker {
-  display: none;
+/* Audit payloads as key/value lines (D3): always on screen, long values clamped. */
+.payload {
+  margin: 10px 0 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  font-size: 13px;
+}
+.payload-row {
+  display: contents;
+}
+.payload dt {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.payload dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+button.linkish {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: inherit;
+  font-weight: 500;
+  cursor: pointer;
 }
 pre {
   background: var(--bg);
