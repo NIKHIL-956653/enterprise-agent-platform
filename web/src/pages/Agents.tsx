@@ -6,7 +6,7 @@
 // run until it reaches a terminal status - the same contract any API client of the
 // platform would use, which means this screen doubles as living documentation.
 
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../api";
 import {
@@ -16,7 +16,7 @@ import {
   type RunDetail,
   type RunEnvelope,
 } from "../types";
-import { fieldErrors } from "../util";
+import { AgentForm, splitServerErrors, type FieldErrors } from "../components/AgentForm";
 
 export function Agents() {
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
@@ -68,6 +68,8 @@ function RunPanel({ agent }: { agent: AgentSummary }) {
   const [status, setStatus] = useState<string | null>(null);
   const [result, setResult] = useState<RunDetail | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+  const [fieldErrs, setFieldErrs] = useState<FieldErrors>({});
+  const fieldNames = Object.keys(agent.input_schema?.properties ?? {});
   // One idempotency key per *submission*: a retry of the same failed submission reuses it
   // (the platform then returns the same run instead of starting a second one); it rotates
   // only after a run actually completes.
@@ -76,6 +78,7 @@ function RunPanel({ agent }: { agent: AgentSummary }) {
   async function run(payload: Record<string, unknown>) {
     setBusy(true);
     setErrors([]);
+    setFieldErrs({});
     setResult(null);
     setStatus("queued");
     try {
@@ -95,8 +98,11 @@ function RunPanel({ agent }: { agent: AgentSummary }) {
       setResult(last);
       keyRef.current = crypto.randomUUID();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 422) setErrors(fieldErrors(e.detail));
-      else if (e instanceof ApiError && e.status === 429)
+      if (e instanceof ApiError && e.status === 422) {
+        const { byField, rest } = splitServerErrors(e.detail, fieldNames);
+        setFieldErrs(byField);
+        setErrors(rest);
+      } else if (e instanceof ApiError && e.status === 429)
         setErrors(["Rate limit reached for this tenant. Wait a minute and retry."]);
       else setErrors([e instanceof Error ? e.message : String(e)]);
       setStatus(null);
@@ -110,7 +116,17 @@ function RunPanel({ agent }: { agent: AgentSummary }) {
       <h2>
         {agent.display_name} {status && <span className={`pill ${status}`}>{status}</span>}
       </h2>
-      <AgentForm name={agent.name} busy={busy} onRun={run} />
+      {agent.input_schema ? (
+        <AgentForm
+          agent={agent.name}
+          schema={agent.input_schema}
+          busy={busy}
+          serverErrors={fieldErrs}
+          onRun={run}
+        />
+      ) : (
+        <p className="muted">No code serves this agent on this server, so it cannot be run.</p>
+      )}
       {errors.length > 0 && (
         <div className="error" style={{ marginTop: 12 }}>
           {errors.map((e, i) => (
@@ -120,160 +136,6 @@ function RunPanel({ agent }: { agent: AgentSummary }) {
       )}
       {result && <RunResult run={result} />}
     </div>
-  );
-}
-
-function AgentForm({
-  name,
-  busy,
-  onRun,
-}: {
-  name: string;
-  busy: boolean;
-  onRun: (p: Record<string, unknown>) => void;
-}) {
-  if (name === "summarize") return <SummarizeForm busy={busy} onRun={onRun} />;
-  if (name === "answer") return <AnswerForm busy={busy} onRun={onRun} />;
-  if (name === "docwriter") return <DocwriterForm busy={busy} onRun={onRun} />;
-  return <RawForm busy={busy} onRun={onRun} />;
-}
-
-type FormProps = { busy: boolean; onRun: (p: Record<string, unknown>) => void };
-
-function SummarizeForm({ busy, onRun }: FormProps) {
-  const [text, setText] = useState("");
-  const [maxSentences, setMaxSentences] = useState(3);
-  return (
-    <form
-      className="panel"
-      onSubmit={(e: FormEvent) => {
-        e.preventDefault();
-        onRun({ text, max_sentences: maxSentences });
-      }}
-    >
-      <label>
-        Text to summarize (50–20,000 characters)
-        <textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} required />
-      </label>
-      <div className="grid2">
-        <label>
-          Max sentences
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={maxSentences}
-            onChange={(e) => setMaxSentences(Number(e.target.value))}
-          />
-        </label>
-      </div>
-      <div>
-        <button disabled={busy}>{busy ? "Running…" : "Run summarize"}</button>
-      </div>
-    </form>
-  );
-}
-
-function AnswerForm({ busy, onRun }: FormProps) {
-  const [question, setQuestion] = useState("");
-  const [topK, setTopK] = useState(5);
-  return (
-    <form
-      className="panel"
-      onSubmit={(e: FormEvent) => {
-        e.preventDefault();
-        onRun({ question, top_k: topK });
-      }}
-    >
-      <label>
-        Question (answered only from this tenant's documents)
-        <input value={question} onChange={(e) => setQuestion(e.target.value)} required />
-      </label>
-      <div className="grid2">
-        <label>
-          Passages to retrieve (top-k)
-          <input
-            type="number"
-            min={1}
-            max={20}
-            value={topK}
-            onChange={(e) => setTopK(Number(e.target.value))}
-          />
-        </label>
-      </div>
-      <div>
-        <button disabled={busy}>{busy ? "Running…" : "Ask"}</button>
-      </div>
-    </form>
-  );
-}
-
-function DocwriterForm({ busy, onRun }: FormProps) {
-  const [ticketId, setTicketId] = useState("");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  return (
-    <form
-      className="panel"
-      onSubmit={(e: FormEvent) => {
-        e.preventDefault();
-        onRun({ ticket_id: ticketId, title, description });
-      }}
-    >
-      <div className="grid2">
-        <label>
-          Ticket id
-          <input value={ticketId} onChange={(e) => setTicketId(e.target.value)} required />
-        </label>
-        <label>
-          Title
-          <input value={title} onChange={(e) => setTitle(e.target.value)} required />
-        </label>
-      </div>
-      <label>
-        Description
-        <textarea
-          rows={6}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          required
-        />
-      </label>
-      <div>
-        <button disabled={busy}>{busy ? "Running…" : "Write document"}</button>
-      </div>
-    </form>
-  );
-}
-
-function RawForm({ busy, onRun }: FormProps) {
-  // Agents without a dedicated form (echo, and whatever ships next) still get a console:
-  // raw JSON in, validated by the API's own 422, which the panel renders field by field.
-  const [raw, setRaw] = useState("{}");
-  const [parseError, setParseError] = useState<string | null>(null);
-  return (
-    <form
-      className="panel"
-      onSubmit={(e: FormEvent) => {
-        e.preventDefault();
-        try {
-          const parsed: unknown = JSON.parse(raw);
-          setParseError(null);
-          onRun(parsed as Record<string, unknown>);
-        } catch {
-          setParseError("Not valid JSON.");
-        }
-      }}
-    >
-      <label>
-        Payload (JSON)
-        <textarea className="mono" rows={6} value={raw} onChange={(e) => setRaw(e.target.value)} />
-      </label>
-      {parseError && <div className="error">{parseError}</div>}
-      <div>
-        <button disabled={busy}>{busy ? "Running…" : "Run"}</button>
-      </div>
-    </form>
   );
 }
 
