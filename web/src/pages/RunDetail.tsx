@@ -102,8 +102,8 @@ export function RunDetailPage() {
               </div>
             )}
             {audit.events.map((e) => (
-              <details key={e.seq} className={`event ${e.intact ? "" : "bad"}`}>
-                <summary>
+              <div key={e.seq} className={`event ${e.intact ? "" : "bad"}`}>
+                <div className="event-head">
                   <span className={`pill ${e.intact ? "succeeded" : "failed"}`}>
                     {e.intact ? "intact" : "broken"}
                   </span>
@@ -113,9 +113,9 @@ export function RunDetailPage() {
                     {shortHash(e.prev_hash)} → {shortHash(e.hash)}
                   </span>
                   <span className="muted">{fmtTime(e.created_at)}</span>
-                </summary>
-                <pre>{JSON.stringify(e.payload, null, 2)}</pre>
-              </details>
+                </div>
+                <PayloadSummary type={e.event_type} payload={e.payload} />
+              </div>
             ))}
             {audit.events.length === 0 && <p className="muted">No audit events for this run.</p>}
           </>
@@ -128,5 +128,122 @@ export function RunDetailPage() {
         </Link>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- audit payloads
+//
+// Rendered as key/value lines, always on screen (D3). They used to sit inside a collapsed
+// <details> whose disclosure marker the CSS removed, so nothing said the JSON was one click
+// away - and a closed <details> is not rendered, so select-all + copy skipped it too. The
+// payload was never empty; it was never on screen.
+
+const PREVIEW_CHARS = 200;
+
+// The keys each event type leads with, in display order. Anything else in the payload is
+// appended generically, because an audit view that silently drops a key is one that lies.
+const LEAD_KEYS: Record<string, string[]> = {
+  "run.started": ["agent", "input"],
+  "llm.call": ["prompt", "completion", "max_output_tokens"],
+  "llm.error": ["prompt"],
+  "retrieval.performed": ["query", "top_k", "min_similarity", "chunks"],
+  "run.finished": ["status", "latency_ms", "error"],
+};
+
+// Keys left out of one event because the page already shows them twice (header and
+// run.started). Not information loss - just not a third copy.
+const SKIP_KEYS: Record<string, string[]> = {
+  "run.finished": ["agent"],
+};
+
+const LABELS: Record<string, string> = {
+  max_output_tokens: "max output tokens",
+  top_k: "top-k",
+  min_similarity: "similarity floor",
+  latency_ms: "latency",
+  _redactions: "redacted values",
+};
+
+type Row = { key: string; label: string; value: string };
+
+function payloadRows(type: string, payload: Record<string, unknown>): Row[] {
+  const lead = LEAD_KEYS[type] ?? [];
+  const skip = SKIP_KEYS[type] ?? [];
+  const keys = [
+    ...lead.filter((k) => k in payload),
+    ...Object.keys(payload).filter((k) => !lead.includes(k) && !skip.includes(k)),
+  ];
+  const out: Row[] = [];
+  for (const key of keys) {
+    const v = payload[key];
+    if (v === null || v === undefined) continue; // e.g. `error: null` on a clean run
+    if (key === "input" && v && typeof v === "object" && !Array.isArray(v)) {
+      for (const [k, iv] of Object.entries(v as Record<string, unknown>)) {
+        out.push({ key: `input.${k}`, label: `input · ${k}`, value: display(iv) });
+      }
+      continue;
+    }
+    if (key === "latency_ms" && typeof v === "number") {
+      out.push({ key, label: LABELS[key], value: `${v} ms` });
+      continue;
+    }
+    if (key === "chunks" && Array.isArray(v)) {
+      out.push({ key, label: "chunks", value: chunksText(v) });
+      continue;
+    }
+    out.push({ key, label: LABELS[key] ?? key.replace(/_/g, " "), value: display(v) });
+  }
+  return out;
+}
+
+function display(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return JSON.stringify(v); // a nested shape with no better rendering: compact, and clamped below
+}
+
+function chunksText(chunks: unknown[]): string {
+  if (chunks.length === 0) return "none cleared the similarity floor";
+  const parts = chunks.map((c) => {
+    const r = c as { ordinal?: unknown; similarity?: unknown };
+    const sim = typeof r.similarity === "number" ? r.similarity.toFixed(2) : "?";
+    return `chunk ${String(r.ordinal ?? "?")} · similarity ${sim}`;
+  });
+  return `${chunks.length} retrieved: ${parts.join("; ")}`;
+}
+
+function PayloadSummary({
+  type,
+  payload,
+}: {
+  type: string;
+  payload: Record<string, unknown> | null | undefined;
+}) {
+  const list = payload ? payloadRows(type, payload) : [];
+  if (list.length === 0) return null; // genuinely nothing to show: no block at all
+  return (
+    <dl className="payload">
+      {list.map((r) => (
+        <div key={r.key} className="payload-row">
+          <dt>{r.label}</dt>
+          <dd>
+            <Clamp text={r.value} />
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function Clamp({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  if (text.length <= PREVIEW_CHARS) return <>{text}</>;
+  return (
+    <>
+      {open ? text : text.slice(0, PREVIEW_CHARS).trimEnd() + "…"}{" "}
+      <button type="button" className="linkish" onClick={() => setOpen((o) => !o)}>
+        {open ? "show less" : `show more (${text.length.toLocaleString()} characters)`}
+      </button>
+    </>
   );
 }

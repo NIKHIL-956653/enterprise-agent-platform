@@ -244,7 +244,7 @@ it touches the L-series i18n work. D1→D3 block the demo; D4→D8 wait for them
 |---|---|---|
 | D1 | Three-college demo seed (`engg`, `mba`, `bba`; admin clearance 3, student clearance 1) | ✅ |
 | D2 | PDF ingest script — folder per tenant, filename as `external_id`, skips scanned PDFs | ✅ |
-| D3 | Audit event payloads render as empty boxes on the run detail page | ⬜ |
+| D3 | Audit event payloads render as empty boxes on the run detail page | ✅ |
 | D4 | Human-readable `external_id` for UI uploads (slug, not `upload:<uuid>`) | ⬜ |
 | D5 | Typed run forms for every agent (echo rejects plain text today) | ⬜ |
 | D6 | Optional External ID field on the upload form | ⬜ |
@@ -306,3 +306,18 @@ leading opener, never one carrying a `[n]` citation (stripping must not drop a s
 anything unrecognised is left exactly as the model wrote it. The live suite now checks the
 RAW completion from the run's audit trail, so `pytest --live` still tells you whether the
 prompt itself works on a real model, not just the strip.
+
+### D3 — how it closed
+The payloads were never empty: the database, the API and even the DOM all carried them.
+Each event was a `<details>` collapsed by default, and the stylesheet removed its disclosure
+marker, so nothing on the row said the JSON was one click away. A closed `<details>` is not
+rendered, which is also why select-all + copy picked up Input and Output but skipped every
+payload. The run page now renders each payload as key/value lines that are always on screen:
+agent and input for `run.started`; prompt and completion clamped to 200 characters with a
+"show more" toggle for `llm.call`; query, top-k, floor and the retrieved chunks for
+`retrieval.performed`; status and latency for `run.finished`. Keys outside those lists are
+still shown, generically, so the view never silently drops part of a hashed payload, and an
+empty payload renders no block at all. Nothing touches `audit_log`: no route, method or
+migration. `tests/test_run_audit.py` now asserts every event's payload is populated over the
+API, so a future empty box is known to be a rendering fault. `web/` is outside CI; `tsc -b`,
+`vite build` and a Chromium check were run by hand.
