@@ -82,18 +82,17 @@ to POST without it.
 | EAP-25 | LLM as a FastAPI dependency (`dependency_overrides` instead of monkeypatch) | Works today; the fix is cosmetic until a second injected service exists |
 | EAP-26 | Live Jira/Confluence integration for docwriter | Needs per-tenant secrets — a milestone of its own, not a ticket |
 
-| EAP-37 | Composite `(created_at, id)` pagination cursor | Timestamp-only cursor can duplicate one row on a boundary tie |
+
+EAP-37 closed 2026-11-01: `/v1/runs` and `/v1/documents` now hand out a `(created_at, id)`
+cursor (`eap.api.pagination`), so two rows on one timestamp straddling a page boundary are
+neither skipped nor repeated. The UI already passed `next_before` back unchanged, so nothing
+in `web/` moved; a bare timestamp is still accepted with its old "strictly older" meaning.
 
 EAP-38 closed 2026-11-01: migration `0005` now creates `eap_app` with the password inside
 `APP_DATABASE_URL` - the URL the app logs in with, so the two cannot drift - via a
 transaction-local setting and `format('%L')`, never string-built SQL. Unset means the old dev
 default, so local setup is unchanged and nothing secret is committed. Rotation is
 `ALTER ROLE eap_app PASSWORD` plus the URL, documented in `.env.example`.
-
-EAP-37 closed 2026-11-01: `/v1/runs` and `/v1/documents` now hand out a `(created_at, id)`
-cursor (`eap.api.pagination`), so two rows on one timestamp straddling a page boundary are
-neither skipped nor repeated. The UI already passed `next_before` back unchanged, so nothing
-in `web/` moved; a bare timestamp is still accepted with its old "strictly older" meaning.
 
 ---
 
