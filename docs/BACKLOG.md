@@ -246,7 +246,7 @@ it touches the L-series i18n work. D1→D3 block the demo; D4→D8 wait for them
 | D2 | PDF ingest script — folder per tenant, filename as `external_id`, skips scanned PDFs | ✅ |
 | D3 | Audit event payloads render as empty boxes on the run detail page | ⬜ |
 | D4 | Human-readable `external_id` for UI uploads (slug, not `upload:<uuid>`) | ⬜ |
-| D5 | Typed run forms for every agent (echo rejects plain text today) | ⬜ |
+| D5 | Typed run forms for every agent (echo rejects plain text today) | ✅ |
 | D6 | Optional External ID field on the upload form | ⬜ |
 | D7 | Prompt: no "According to the passage" openers, plus a test | ✅ |
 | D8 | Confirm echo's 0 ms latency is a measurement, not a missing value | ⬜ |
@@ -306,3 +306,14 @@ leading opener, never one carrying a `[n]` citation (stripping must not drop a s
 anything unrecognised is left exactly as the model wrote it. The live suite now checks the
 RAW completion from the run's audit trail, so `pytest --live` still tells you whether the
 prompt itself works on a real model, not just the strip.
+
+### D5 — how it closed
+The four hand-written forms and the raw-JSON fallback are gone. `GET /v1/agents` now carries
+each agent's `input_schema` - its pydantic InputModel as JSON Schema - and one `AgentForm`
+renders labelled fields from it, with presentation hints (labels, textareas, an "Advanced"
+section) kept in a small map in the UI. Required-ness and limits come from the schema, so the
+form cannot drift from what the API validates; an agent with no hints still gets a typed form.
+Errors are checked in the browser first and shown under the offending field; a 422 the API
+still returns is mapped onto the field its `loc` names. Echo takes plain text.
+Not covered by CI: `web/` has no test runner, so the form behaviour was checked with a
+Playwright script against the running stack (16 checks), not a committed test.

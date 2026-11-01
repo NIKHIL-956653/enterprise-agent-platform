@@ -1,11 +1,30 @@
 // The API's response shapes, written down once. These mirror the FastAPI response models;
 // if the backend changes a field, this is the one file to update.
 
+// The subset of JSON Schema that pydantic emits for a flat InputModel (D5).
+export type SchemaProperty = {
+  type?: "string" | "integer" | "number" | "boolean" | "array" | "object";
+  title?: string;
+  default?: unknown;
+  minLength?: number;
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
+  maxItems?: number;
+  items?: { type?: string };
+};
+
+export type JsonSchema = {
+  properties?: Record<string, SchemaProperty>;
+  required?: string[];
+};
+
 export type AgentSummary = {
   name: string;
   display_name: string;
   is_enabled: boolean;
   has_implementation: boolean;
+  input_schema: JsonSchema | null;
 };
 
 export type RunEnvelope = {
