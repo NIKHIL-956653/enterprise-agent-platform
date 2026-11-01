@@ -146,3 +146,27 @@ async def test_naive_before_is_422(client: AsyncClient) -> None:
         params={"before": "2026-10-22T10:00:00"},  # no timezone
     )
     assert r.status_code == 422
+
+
+async def test_documents_sharing_a_timestamp_are_neither_skipped_nor_repeated(client: AsyncClient) -> None:
+    """EAP-37, same shape as the runs test: tied rows straddling a page boundary of 1."""
+    from tests.test_runs import _force_same_timestamp
+
+    seed = await _seed_tenant()
+    token = await _token(client, seed, "high")
+    for i in range(4):
+        await _ingest(client, token, f"doc-{i}")
+    first_page = await _list(client, token, limit=4)
+    await _force_same_timestamp("documents", [d["document_id"] for d in first_page["items"][:2]])
+
+    seen: list[str] = []
+    before = None
+    for _ in range(10):
+        page = await _list(client, token, limit=1, **({"before": before} if before else {}))
+        seen += [d["external_id"] for d in page["items"]]
+        before = page["next_before"]
+        if before is None:
+            break
+
+    assert sorted(seen) == sorted(f"doc:doc-{i}" for i in range(4))
+    assert len(seen) == len(set(seen))

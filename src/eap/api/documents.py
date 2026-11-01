@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from eap.api import pagination
 from eap.core.deps import get_current_tenant_id, get_tenant_session
 from eap.llm.base import LLMError
 from eap.models.document import Document, DocumentChunk
@@ -101,25 +102,25 @@ class DocumentSummary(BaseModel):
 
 class DocumentPage(BaseModel):
     items: list[DocumentSummary]
-    # Send this back as ?before=... for the next page. None means there is no next page.
-    next_before: datetime | None
+    # Send this back as ?before=... for the next page, unchanged - it is opaque. None means
+    # there is no next page. Same cursor as /v1/runs (EAP-37, eap.api.pagination).
+    next_before: str | None
 
 
 @router.get("", response_model=DocumentPage)
 async def list_documents(
     session: Annotated[AsyncSession, Depends(get_tenant_session)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    before: Annotated[datetime | None, Query()] = None,
+    before: Annotated[str | None, Query()] = None,
 ) -> DocumentPage:
     """
     The tenant's documents, newest first - and never their bodies: a list that returns
     200KB per row is how a browse screen becomes a bulk-export endpoint. Keyset pagination,
-    same contract as /v1/runs (and the same EAP-37 tie caveat). No tenant or clearance
+    same contract and cursor as /v1/runs (eap.api.pagination). No tenant or clearance
     filter in the query: the session carries both, and RLS applies them - a document above
     the caller's clearance simply does not exist here.
     """
-    if before is not None and before.tzinfo is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "before must include a timezone")
+    cursor = pagination.parse(before)
 
     stmt = (
         select(Document, func.count(DocumentChunk.id))
@@ -128,8 +129,8 @@ async def list_documents(
         .order_by(Document.created_at.desc(), Document.id.desc())
         .limit(limit + 1)  # one extra row tells us whether a next page exists
     )
-    if before is not None:
-        stmt = stmt.where(Document.created_at < before)
+    if cursor is not None:
+        stmt = stmt.where(pagination.older_than(cursor, Document.created_at, Document.id))
 
     rows = (await session.execute(stmt)).all()
     has_more = len(rows) > limit
@@ -145,4 +146,8 @@ async def list_documents(
         )
         for doc, count in rows[:limit]
     ]
-    return DocumentPage(items=items, next_before=items[-1].created_at if has_more else None)
+    last = items[-1] if has_more else None
+    return DocumentPage(
+        items=items,
+        next_before=pagination.encode(last.created_at, last.document_id) if last is not None else None,
+    )
