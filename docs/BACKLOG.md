@@ -4,7 +4,7 @@ Every commit references a ticket id. Tickets are closed by a merged PR, not by b
 
 Status: `✅ done` · `🔨 in progress` · `⬜ todo` · `⏸️ deferred` · `➡️ superseded`
 
-Last updated: 2026-10-31, demo readiness sprint (D1, D2 closed; CI repaired).
+Last updated: 2026-11-01, demo readiness sprint; known limits recorded (EAP-58→61).
 
 ---
 
@@ -317,3 +317,109 @@ Errors are checked in the browser first and shown under the offending field; a 4
 still returns is mapped onto the field its `loc` names. Echo takes plain text.
 Not covered by CI: `web/` has no test runner, so the form behaviour was checked with a
 Playwright script against the running stack (16 checks), not a committed test.
+
+---
+
+## Known limits — recorded, not scheduled
+
+Four things that are true of the platform today and should be read as known rather than
+missed. None is demo-blocking; two are security-relevant. Recorded 2026-11-01.
+
+| ID | Title | Why it waits |
+|---|---|---|
+| EAP-58 | Vector retrieval has no index — and adding HNSW needs a decision first | No tenant is near ADR-003's trigger (p95 > 200 ms or 100k chunks) |
+| EAP-59 | Per-tenant provider keys are plaintext at rest in the only secret backend | Dev/demo backend by design; a KMS or Vault backend is a milestone, not a ticket |
+| EAP-60 | Branch protection on `main` does not require the CI check to pass | Repo setting, no code; red PRs #25–#35 merged because of it |
+| EAP-61 | `POST /v1/documents` is an existence oracle for restricted `external_id`s | Needs a semantics decision on id uniqueness, not a patch |
+
+### EAP-58 — Vector retrieval has no index
+**Type:** scaling · **Status:** ⬜ todo
+
+`retrieve()` runs `ORDER BY c.embedding <=> CAST(:q AS vector)` with no vector index
+(`src/eap/rag/retrieval.py`; migration `0007` creates only the b-tree
+`(tenant_id, document_id)` index). Two precisions on the usual framing of this: the scan is
+not over the whole table but over the caller's tenant - RLS filters on `tenant_id` and the
+b-tree index serves that filter - and it is exact, which is why the isolation and clearance
+tests can assert *empty* results rather than *poor* ones. The cost is one distance
+computation per chunk the tenant owns, per question. That grows linearly with a tenant's
+corpus, so the first tenant to upload a real library (tens of thousands of chunks) is the
+problem, more than the number of tenants. ADR-003 §4 chose this deliberately and set the
+trigger for HNSW: p95 retrieval above 200 ms, or 100k chunks.
+
+**The catch, which is why this is a ticket and not a one-liner.** An HNSW index on
+`document_chunks.embedding` is global. It returns the `ef_search` nearest vectors across
+*every* tenant, and only then does RLS strip the rows the caller may not see. A tenant whose
+own corpus holds a good match can get zero rows back because the index handed up another
+tenant's neighbours and RLS removed them all. The `answer` agent would then refuse - "the
+documents do not cover that question" - while the document sits right there. That is a
+correctness failure that looks like a feature, the exact shape EAP-35 was written to catch,
+and the existing tests would not catch it: they assert the *absence* of other tenants' rows,
+which RLS still guarantees, not the *presence* of your own.
+
+Two ways through, and the choice has to be made **before** the index is built, because each
+implies a different table layout and a different cut-over:
+
+1. **pgvector iterative index scans** (0.8.0+; the CI/compose image ships `0.8.7`):
+   `SET hnsw.iterative_scan = relaxed_order` makes the index keep scanning until enough rows
+   survive the filter, bounded by `hnsw.max_scan_tuples`. One global index, no schema change,
+   but recall under a highly selective filter (a small tenant in a big table) is bounded by
+   that tuple cap, and the setting is per-session - it belongs in `get_tenant_session`, next
+   to the RLS context, or it is forgotten.
+2. **Partition `document_chunks` by `tenant_id`** (list partitioning, one HNSW index per
+   partition). "Nearest within the tenant" becomes what the index computes, not something
+   filtered afterwards; RLS still applies on top. Costs: partition management on tenant
+   creation (which EAP-16 does not have yet), a schema migration with a data copy, and
+   per-partition index builds.
+
+Whichever is chosen, two things come with it: the ops class must match the operator
+(`vector_cosine_ops` for `<=>`), and `tests/test_retrieval.py` needs a *presence* test - a
+small tenant inside a large multi-tenant table still finds its own nearest chunk - so that
+approximate retrieval cannot pass the suite while silently refusing real questions.
+
+### EAP-59 — Per-tenant provider keys are plaintext at rest
+**Type:** security · **Status:** ⬜ todo
+
+EAP-47 put the key lookup behind a `SecretResolver` Protocol, which is the right shape, but
+the only implementation is `EnvSecretResolver` (`src/eap/llm/secrets.py`): it reads
+`TENANT_<SLUG>_<NAME>` from the process environment, then from `.env`. So a tenant's
+Anthropic or Gemini key lives as plaintext in a file on the host, readable by anything that
+can read the file, and `secret_backend` accepts no other value (`get_secret_resolver` raises
+on anything but `env`). Encryption at rest is therefore not "unconfirmed": for the backend
+that exists, there is none. That is fine for a demo on one laptop and not fine for a
+deployment holding customer keys. The resolver boundary means a KMS- or Vault-backed
+implementation is additive - no call site changes - but it is a milestone with its own
+threat model (who can rotate, who can read, how a leaked key is revoked), not a ticket.
+
+### EAP-60 — Branch protection does not require the CI check
+**Type:** process · **Status:** ⬜ todo
+
+PRs #25–#35 all merged with the `test` check red (the Temporal service never started in
+CI; fixed in #37). Branch protection on `main` therefore does not have "Require status
+checks to pass before merging" enabled with `test` selected - or has it, with the check not
+marked required. Fix in the repository settings, no code: require `test`, and consider
+"Require branches to be up to date before merging" so a green PR cannot land on a main that
+moved. Until then, "CI must be green before you merge" is a habit, not a property.
+
+### EAP-61 — The document write path reveals restricted `external_id`s
+**Type:** security · **Status:** ⬜ todo
+
+Reproduced 2026-11-01 on the demo seed. `admin@engg.edu` ingests "Exam answer key" with
+`external_id` `exam-key` at classification 3. `student@engg.edu` (clearance 1) lists
+documents and sees `[]` - correct. The student then POSTs their own document with
+`external_id` `exam-key` at classification 1 and gets `403 classification exceeds your
+clearance`; the same POST with `not-taken` gets `201`. The 403 is RLS refusing the
+`ON CONFLICT DO UPDATE` on a row the student cannot see, and the handler's only message for
+a refused write names clearance. So an authenticated member can test whether a restricted
+document with a given id exists - existence only, never content - and with
+`scripts/ingest_pdfs.py` ids are file names, which are guessable (`exam-key.pdf`). That is a
+small crack in exactly the claim the demo makes ("never told it exists").
+
+Why it is not a patch: `(tenant_id, external_id)` is unique across classifications, so a
+collision with an invisible row has no honest non-leaking response - 201 would be a lie, 409
+is the same oracle with a different number. Options, each a semantics decision:
+(a) scope uniqueness to `(tenant_id, classification, external_id)` - closes the oracle,
+but re-posting at a new classification then creates a second document instead of
+reclassifying the first; (b) keep the contract and make probing *detectable*: audit a
+`document.write_refused` event with the attempted id, and rate-limit refused writes per
+user; (c) namespace auto and explicit ids per clearance level. D4 was designed so the
+auto-generated ids never touch this (random suffix, `DO NOTHING`); explicit ids still do.
