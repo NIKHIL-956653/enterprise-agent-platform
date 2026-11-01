@@ -36,7 +36,10 @@ export function Documents() {
 
   return (
     <div className="stack">
-      <UploadForm onDone={() => void load(null)} />
+      <UploadForm
+        onDone={() => void load(null)}
+        existingIds={new Set(items.map((d) => d.document_id))}
+      />
       {error && <div className="error">{error}</div>}
       <div className="card">
         <h2>Documents</h2>
@@ -85,8 +88,12 @@ export function Documents() {
   );
 }
 
-function UploadForm({ onDone }: { onDone: () => void }) {
+// existingIds: the documents already on screen, so a re-post can say "replaced" when the
+// API hands back an id that was listed. It is only ever a confirmation, never a guess: an
+// id not on the first page just gets the plain "ingested" line.
+function UploadForm({ onDone, existingIds }: { onDone: () => void; existingIds: Set<string> }) {
   const [title, setTitle] = useState("");
+  const [externalId, setExternalId] = useState("");
   const [body, setBody] = useState("");
   const [classification, setClassification] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -99,12 +106,23 @@ function UploadForm({ onDone }: { onDone: () => void }) {
     setErrors([]);
     setOkMsg(null);
     try {
-      const res = await api<{ document_id: string; chunk_count: number }>("/v1/documents", {
-        method: "POST",
-        body: { title, body, classification },
-      });
-      setOkMsg(`Ingested: ${res.chunk_count} chunk(s) embedded and stored.`);
+      const xid = externalId.trim();
+      const res = await api<{ document_id: string; external_id: string; chunk_count: number }>(
+        "/v1/documents",
+        {
+          method: "POST",
+          // Blank means omitted: the API then derives an id from the title (D4).
+          body: { title, body, classification, ...(xid ? { external_id: xid } : {}) },
+        },
+      );
+      const replaced = existingIds.has(res.document_id);
+      setOkMsg(
+        `${replaced ? "Replaced" : "Ingested"} “${title}” as ${res.external_id}: ` +
+          `${res.chunk_count} chunk(s) embedded and stored.` +
+          (replaced ? " Same External ID, so its previous chunks were replaced, not added to." : ""),
+      );
       setTitle("");
+      setExternalId("");
       setBody("");
       onDone();
     } catch (err) {
@@ -141,6 +159,20 @@ function UploadForm({ onDone }: { onDone: () => void }) {
           </select>
         </label>
       </div>
+      <label>
+        External ID (optional)
+        <input
+          value={externalId}
+          onChange={(e) => setExternalId(e.target.value)}
+          placeholder="e.g. syllabus-2026.pdf"
+          maxLength={200}
+        />
+        <span className="hint">
+          Your own id for this source. Re-posting the same External ID replaces that
+          document's chunks instead of adding a second document. Leave it blank for a new
+          document each time, with an id derived from the title.
+        </span>
+      </label>
       <label>
         Body (plain text; it will be chunked and embedded)
         <textarea rows={8} value={body} onChange={(e) => setBody(e.target.value)} required />

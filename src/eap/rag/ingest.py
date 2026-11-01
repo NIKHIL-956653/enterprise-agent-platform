@@ -12,7 +12,9 @@ easy to lose and fails opaquely at the first INSERT. The cast makes the wire for
 unambiguous and needs nothing registered.
 """
 
-import uuid
+import re
+import secrets
+import unicodedata
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -51,6 +53,53 @@ def _to_pgvector(values: list[float]) -> str:
     return "[" + ",".join(repr(float(v)) for v in values) + "]"
 
 
+# A document posted without an external_id gets one derived from its title (D4), so a
+# citation reads "marina-handbook-3f9a2c1d" rather than "upload:35a9fc7b-75cf-...". The
+# random suffix is what keeps "omitted means a new document every time" true without
+# looking anything up. A lookup here would run under RLS, which hides documents above the
+# caller's clearance - so an id scheme that checked whether "exam-key" was taken would tell
+# a student that a document with that title exists at a level they cannot read.
+SLUG_MAX = 60
+SUFFIX_HEX = 8
+
+
+def slugify(title: str) -> str:
+    """Case-folded; letters and digits in any script kept; everything else collapsed to '-'."""
+    s = unicodedata.normalize("NFKC", title).casefold()
+    s = re.sub(r"[^\w]+", "-", s)
+    s = re.sub(r"[-_]+", "-", s).strip("-")
+    return s[:SLUG_MAX].rstrip("-") or "document"
+
+
+def _suffix() -> str:
+    """Indirection so a test can force a collision."""
+    return secrets.token_hex(SUFFIX_HEX // 2)
+
+
+def auto_external_id(title: str) -> str:
+    return f"{slugify(title)}-{_suffix()}"
+
+
+_UPSERT_BY_EXTERNAL_ID = text(
+    "INSERT INTO documents (id, tenant_id, external_id, title, source, classification) "
+    "VALUES (gen_random_uuid(), :tid, :xid, :title, :source, :cls) "
+    "ON CONFLICT (tenant_id, external_id) DO UPDATE "
+    "SET title = EXCLUDED.title, source = EXCLUDED.source, "
+    "    classification = EXCLUDED.classification, updated_at = now() "
+    "RETURNING id"
+)
+
+# DO NOTHING, not DO UPDATE: an auto-generated id must never replace a document that happens
+# to share its title and suffix - visible to this caller or not. No row back means the id
+# was taken, and the caller draws another.
+_INSERT_FRESH = text(
+    "INSERT INTO documents (id, tenant_id, external_id, title, source, classification) "
+    "VALUES (gen_random_uuid(), :tid, :xid, :title, :source, :cls) "
+    "ON CONFLICT (tenant_id, external_id) DO NOTHING "
+    "RETURNING id"
+)
+
+
 async def ingest_document(
     *,
     session: AsyncSession,
@@ -82,27 +131,21 @@ async def ingest_document(
     embedder = embedder or _default_embedder()
     vectors = await embedder.embed_documents(chunks)
 
-    external_id = external_id or f"upload:{uuid.uuid4()}"
-
-    document_id = (
-        await session.execute(
-            text(
-                "INSERT INTO documents (id, tenant_id, external_id, title, source, classification) "
-                "VALUES (gen_random_uuid(), :tid, :xid, :title, :source, :cls) "
-                "ON CONFLICT (tenant_id, external_id) DO UPDATE "
-                "SET title = EXCLUDED.title, source = EXCLUDED.source, "
-                "    classification = EXCLUDED.classification, updated_at = now() "
-                "RETURNING id"
-            ),
-            {
-                "tid": str(tenant_id),
-                "xid": external_id,
-                "title": title,
-                "source": source,
-                "cls": int(classification),
-            },
-        )
-    ).scalar_one()
+    params = {"tid": str(tenant_id), "title": title, "source": source, "cls": int(classification)}
+    if external_id:
+        document_id = (
+            await session.execute(_UPSERT_BY_EXTERNAL_ID, {**params, "xid": external_id})
+        ).scalar_one()
+    else:
+        for _attempt in range(5):
+            external_id = auto_external_id(title)
+            document_id = (
+                await session.execute(_INSERT_FRESH, {**params, "xid": external_id})
+            ).scalar_one_or_none()
+            if document_id is not None:
+                break
+        else:  # five 32-bit collisions on one title: something other than chance is going on
+            raise RuntimeError("could not allocate a unique external_id")
 
     # Replace rather than append. Re-chunking with different settings would otherwise leave
     # the old chunks alongside the new ones, both embedded, both matching, silently doubling
