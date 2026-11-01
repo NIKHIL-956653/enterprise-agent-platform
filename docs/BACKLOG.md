@@ -81,8 +81,12 @@ to POST without it.
 |---|---|---|
 | EAP-25 | LLM as a FastAPI dependency (`dependency_overrides` instead of monkeypatch) | Works today; the fix is cosmetic until a second injected service exists |
 | EAP-26 | Live Jira/Confluence integration for docwriter | Needs per-tenant secrets — a milestone of its own, not a ticket |
-| EAP-37 | Composite `(created_at, id)` pagination cursor | Timestamp-only cursor can duplicate one row on a boundary tie |
 | EAP-38 | `eap_app` password out of migration `0005` | Hardcoded, public, unrotatable. Fine for a throwaway local DB, nowhere else |
+
+EAP-37 closed 2026-11-01: `/v1/runs` and `/v1/documents` now hand out a `(created_at, id)`
+cursor (`eap.api.pagination`), so two rows on one timestamp straddling a page boundary are
+neither skipped nor repeated. The UI already passed `next_before` back unchanged, so nothing
+in `web/` moved; a bare timestamp is still accepted with its old "strictly older" meaning.
 
 ---
 

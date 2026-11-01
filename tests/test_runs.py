@@ -136,3 +136,66 @@ async def test_other_tenant_sees_nothing(client) -> None:
 
     assert listing.json()["items"] == []
     assert detail.status_code == 404
+
+
+async def _force_same_timestamp(table: str, ids: list[str]) -> None:
+    """
+    Put these rows on one created_at. The owner connection is a superuser in dev and CI,
+    which is why this UPDATE sees the rows at all - FORCE RLS stops everyone else. The
+    rowcount check makes a non-superuser owner fail here, loudly, not later and silently.
+    """
+    async with get_owner_session_factory()() as s:
+        touched = 0
+        for row_id in ids:
+            res = await s.execute(
+                text(f"UPDATE {table} SET created_at = TIMESTAMPTZ '2026-10-31 12:00:00+00' WHERE id = :id"),
+                {"id": row_id},
+            )
+            touched += res.rowcount
+        await s.commit()
+    assert touched == len(ids), f"expected to update {len(ids)} rows, updated {touched}"
+
+
+async def test_runs_sharing_a_timestamp_are_neither_skipped_nor_repeated(client) -> None:
+    """
+    EAP-37. The sort is (created_at, id) but the cursor used to carry created_at alone, so
+    "older than T" lost the tied row on the far side of a page boundary. Page size 1 puts the
+    boundary between the two tied rows, which is exactly where the old cursor failed.
+    """
+    h = await _headers(client)
+    created = [await _echo(client, h, str(i)) for i in range(3)]
+    await _force_same_timestamp("agent_runs", created[:2])
+
+    seen: list[str] = []
+    before = None
+    for _ in range(10):  # bounded: a paging bug must fail, not loop forever
+        page = (
+            await client.get(
+                "/v1/runs", params={"limit": 1, **({"before": before} if before else {})}, headers=h
+            )
+        ).json()
+        seen += [i["run_id"] for i in page["items"]]
+        before = page["next_before"]
+        if before is None:
+            break
+
+    assert sorted(seen) == sorted(created)  # every run once, none twice
+    assert len(seen) == len(set(seen))
+
+
+async def test_a_bare_timestamp_cursor_still_means_strictly_older(client) -> None:
+    h = await _headers(client)
+    created = [await _echo(client, h, str(i)) for i in range(2)]
+    newest = (await client.get("/v1/runs", params={"limit": 1}, headers=h)).json()["items"][0]
+
+    page = (await client.get("/v1/runs", params={"before": newest["created_at"]}, headers=h)).json()
+
+    assert [i["run_id"] for i in page["items"]] == [r for r in created if r != newest["run_id"]]
+
+
+async def test_a_garbage_cursor_is_422(client) -> None:
+    h = await _headers(client)
+    assert (await client.get("/v1/runs", params={"before": "yesterday"}, headers=h)).status_code == 422
+    assert (
+        await client.get("/v1/runs", params={"before": "2026-01-01T00:00:00+00:00|not-a-uuid"}, headers=h)
+    ).status_code == 422
