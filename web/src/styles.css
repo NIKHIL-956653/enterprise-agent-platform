@@ -467,3 +467,44 @@ pre {
   padding: 6px 10px;
   font-size: 13px;
 }
+
+/* ---- ops (EAP-65) ---- */
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 160px;
+  padding-top: 18px;
+}
+.bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+}
+.bar {
+  width: 100%;
+  max-width: 48px;
+  min-height: 2px;
+  background: var(--accent-dim);
+  border-top: 2px solid var(--accent);
+  border-radius: 3px 3px 0 0;
+}
+.bar-count,
+.bar-label {
+  font-size: 11px;
+  font-family: var(--mono);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+table.ops th {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  color: var(--text);
+  width: 55%;
+  font-weight: 500;
+}

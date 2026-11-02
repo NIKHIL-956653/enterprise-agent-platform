@@ -17,6 +17,7 @@ export function Layout({ children }: { children: ReactNode }) {
             Runs
           </NavLink>
           <NavLink to="/documents">Documents</NavLink>
+          {(me?.role === "admin" || me?.role === "owner") && <NavLink to="/ops">Ops</NavLink>}
         </nav>
         <div className="who">
           <span className="muted">
