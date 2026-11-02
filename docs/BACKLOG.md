@@ -389,7 +389,7 @@ on main as ordinary ticket branches, nothing touches the L-series.
 | EAP-62 | Per-student accounts from `demo-docs/{tenant}/students.csv`; credentials file, gitignored | ✅ |
 | EAP-63 | Answer feedback - `feedback` table, `POST /v1/runs/{id}/feedback`, thumbs on the answer card | ✅ |
 | EAP-64 | Daily token budget per tenant, counted in Asia/Kolkata, 429 with the reset time | ✅ |
-| EAP-65 | Ops summary - `GET /v1/ops/summary` for a tenant's admin + `scripts/ops_report.py` for the operator | ⬜ |
+| EAP-65 | Ops summary - `GET /v1/ops/summary` for a tenant's admin + `scripts/ops_report.py` for the operator | ✅ |
 | EAP-66 | Deployment pack - `deploy/compose.prod.yml`, Caddy, `.env.production.example`, `docs/DEPLOY.md` | ⬜ |
 
 ### EAP-62 — how it closed
@@ -466,6 +466,32 @@ still being a ceiling); `acme` keeps the default. `tests/test_token_budget.py` (
 accounting, both providers' usage parsing, the Kolkata day boundary (a run at 23:59 yesterday
 does not count, one at 00:01 does), the 429 and its message, zero, tenant separation, and the
 in-worker refusal through `execute_agent`.
+
+### EAP-65 — how it closed
+One function, `eap.ops.summarize`, two callers, and the split between them is the design:
+
+- **`GET /v1/ops/summary?days=7`** for a tenant's own admin or owner (403 for a member, by
+  the role claim). Runs per day (every day of the window, zeros included), p50/p95
+  `latency_ms`, refusal rate (`answered: false` over succeeded `answer` runs), error rate
+  (failed + timed out over runs), tokens, thumbs up/down and their ratio. It passes the
+  RLS-scoped session and **no tenant id**: the function's SQL has no tenant clause on this
+  path, so the numbers are the caller's by construction. An **Ops** tab in the admin UI
+  (admins only in the nav) renders the table and one bar per day; `web/` is outside CI,
+  `tsc -b` and `vite build` by hand.
+- **`scripts/ops_report.py`** for the platform operator: the owner session, one call per
+  tenant with an explicit `tenant_id` (the owner bypasses RLS, so that filter is the whole
+  scoping there), all tenants as columns. The docstring says why: the app has no
+  cross-tenant endpoint and must never grow one - no token, however privileged, can ask the
+  API for another tenant's numbers; the one party entitled to see all tenants already holds
+  the owner credentials, so that view goes through the database, never through the app.
+  `test_the_app_has_no_cross_tenant_route` pins it: `/v1/ops/summary` is the only ops route,
+  and `?tenant=`/`?tenant_id=`/`?all=` change nothing.
+
+Days are calendar days in `settings.token_budget_timezone`, the same calendar the budget
+uses, so "today" means one thing on the Ops tab and in a 429. Rates are `null`, not 0, when
+the denominator is 0. `tests/test_ops_summary.py` (14) builds a known history (7 runs, 1
+error, 2 refusals, 125 tokens, 1/1 thumbs) and checks every number through both callers,
+plus the window arithmetic and a run at 23:55 IST landing on yesterday's bar.
 
 ---
 
