@@ -24,3 +24,6 @@ demo-docs/
 
 # Student logins written by scripts/seed_students.py - never committed, wherever they sit.
 credentials.txt
+
+# Redis writes its snapshot into the cwd when started from here; never commit it.
+dump.rdb
