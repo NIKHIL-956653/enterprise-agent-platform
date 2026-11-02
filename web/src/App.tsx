@@ -4,6 +4,7 @@ import { useAuth } from "./auth";
 import { Agents } from "./pages/Agents";
 import { Documents } from "./pages/Documents";
 import { Login } from "./pages/Login";
+import { Ops } from "./pages/Ops";
 import { RunDetailPage } from "./pages/RunDetail";
 import { Runs } from "./pages/Runs";
 
@@ -21,6 +22,7 @@ export function App() {
         <Route path="/runs" element={<Runs />} />
         <Route path="/runs/:id" element={<RunDetailPage />} />
         <Route path="/documents" element={<Documents />} />
+        <Route path="/ops" element={<Ops />} />
         <Route path="*" element={<Navigate to="/agents" replace />} />
       </Routes>
     </Layout>

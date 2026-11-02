@@ -102,3 +102,23 @@ export type Citation = {
 export const TERMINAL_STATUSES = new Set(["succeeded", "failed", "timed_out"]);
 
 export const CLASSIFICATION_NAMES = ["public", "internal", "confidential", "restricted"] as const;
+
+// GET /v1/ops/summary (EAP-65). Rates are null when their denominator is zero.
+export type OpsSummary = {
+  days: number;
+  timezone: string;
+  since: string;
+  runs: number;
+  per_day: { day: string; runs: number }[];
+  p50_latency_ms: number | null;
+  p95_latency_ms: number | null;
+  answer_runs: number;
+  refusals: number;
+  refusal_rate: number | null;
+  errors: number;
+  error_rate: number | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  feedback: { up: number; down: number; ratio: number | null };
+};

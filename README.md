@@ -90,6 +90,14 @@ Every password is `$DEMO_PASSWORD`, or the dev-only default `demo-password-123` 
 Each college gets a daily token budget of 5,000,000 (prompt + completion, per calendar day in
 `TOKEN_BUDGET_TIMEZONE`, Asia/Kolkata by default); once it is spent the run endpoint answers
 429 with the reset time. Change it on the `tenants` row.
+
+How the pilot is going: an admin's **Ops** tab (`GET /v1/ops/summary?days=7`) shows runs per
+day, p50/p95 latency, refusal and error rates, tokens and thumbs for their own college. The
+cross-tenant view is the operator's, against the database, never through the app:
+
+```bash
+python scripts/ops_report.py --days 7          # every tenant, side by side
+```
 The three colleges are the isolation demo: one college cannot see another's documents, and a
 student (clearance 1) cannot see faculty material classified 2 or 3, nor learn that it exists.
 
