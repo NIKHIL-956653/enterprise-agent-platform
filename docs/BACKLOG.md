@@ -4,7 +4,7 @@ Every commit references a ticket id. Tickets are closed by a merged PR, not by b
 
 Status: `✅ done` · `🔨 in progress` · `⬜ todo` · `⏸️ deferred` · `➡️ superseded`
 
-Last updated: 2026-11-01, demo readiness sprint; known limits recorded (EAP-58→61).
+Last updated: 2026-11-02, pilot readiness (EAP-62→66) opened; EAP-61 merged.
 
 ---
 
@@ -373,6 +373,47 @@ Confirmed from the code, no change needed. `runner.py` measures every run the sa
 int((time.perf_counter() - started) * 1000)` after it. Echo does no I/O and finishes in
 well under a millisecond, so `int()` rounds a real sub-millisecond measurement down to 0.
 The page shows "0 ms" for the same reason a stopwatch shows 0.0 s for a blink.
+
+---
+
+## Pilot readiness — EAP-62→66 🔨
+
+About twenty students across the three colleges log in and ask questions against their own
+college's documents. What the demo did not need and a pilot does: an account per student,
+a way for students to say whether an answer helped, a cap on what a day can cost, a view of
+how the pilot is going, and a way to run it off one VPS. Same rules as the demo work: built
+on main as ordinary ticket branches, nothing touches the L-series.
+
+| ID | Title | Status |
+|---|---|---|
+| EAP-62 | Per-student accounts from `demo-docs/{tenant}/students.csv`; credentials file, gitignored | ✅ |
+| EAP-63 | Answer feedback - `feedback` table, `POST /v1/runs/{id}/feedback`, thumbs on the answer card | ⬜ |
+| EAP-64 | Daily token budget per tenant, counted in Asia/Kolkata, 429 with the reset time | ⬜ |
+| EAP-65 | Ops summary - `GET /v1/ops/summary` for a tenant's admin + `scripts/ops_report.py` for the operator | ⬜ |
+| EAP-66 | Deployment pack - `deploy/compose.prod.yml`, Caddy, `.env.production.example`, `docs/DEPLOY.md` | ⬜ |
+
+### EAP-62 — how it closed
+`scripts/seed_students.py`, a sibling of `seed_demo.py` rather than a flag on it: the demo
+seed describes fixed tenants in code, the student roster is data that changes per college.
+It reads `demo-docs/{tenant}/students.csv` (`name,email`, any column order), creates one
+`member` at clearance 1 per row through the owner session, and writes
+`demo-docs/{tenant}/credentials.txt` (`email<TAB>name<TAB>password`, mode 0600). Decisions:
+
+- **The file is the only place a password exists.** stdout gets counts and the path;
+  `tests/test_seed_students.py` reads the file back to log in and asserts no password it
+  finds there appears in stdout. `demo-docs/` was already gitignored; `credentials.txt` is
+  now ignored by name as well, wherever it sits.
+- **Idempotent, with `--rotate` as the only way to change a password.** A re-run re-asserts
+  `member`/clearance 1 (the same repair `seed_demo.py` does) and keeps the hash; the line
+  on file is kept too. Dropping a row from the CSV deletes neither the account nor its line.
+- **Staff emails are skipped, not demoted.** A CSV row naming an existing admin or owner is
+  reported and left alone, so a roster cannot turn an admin into a student or reset their
+  password.
+- **`name` goes to the credentials file only.** `users` has no name column, and adding one
+  for a hand-out slip is not this ticket; the admin gets the name next to the login.
+
+Not verified in CI: a run against the real `demo-docs/` folders - the tests use a two-row
+CSV in a temporary directory.
 
 ---
 

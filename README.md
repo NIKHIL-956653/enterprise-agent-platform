@@ -99,6 +99,15 @@ python scripts/ingest_pdfs.py --tenant engg --classification 3 --layout "faculty
 python scripts/ingest_pdfs.py --dry-run             # extract and report, post nothing
 ```
 
+For a pilot, give each student their own login from a roster (`demo-docs/<slug>/students.csv`
+with columns `name,email`); one `member` at clearance 1 per row, passwords written only to
+`demo-docs/<slug>/credentials.txt` (gitignored, mode 0600), never to the terminal:
+
+```bash
+python scripts/seed_students.py                     # all three colleges
+python scripts/seed_students.py --tenant engg --rotate   # new passwords for engg's students
+```
+
 It logs in as `admin@<slug>.edu` with `$DEMO_PASSWORD` (or `--password`). The file name is
 the `external_id`, so re-running replaces a document's chunks rather than adding to them.
 Scanned PDFs with no extractable text are skipped and reported, never posted as empty
