@@ -5,6 +5,8 @@ No database here on purpose — these assert the shape the migration has to matc
 the part that is expensive to discover late.
 """
 
+from sqlalchemy import UniqueConstraint
+
 from eap.core.config import get_settings
 from eap.models import Document, DocumentChunk
 from eap.models.document import EMBEDDING_DIMENSIONS
@@ -29,6 +31,14 @@ def test_both_tables_carry_tenant_id() -> None:
         assert "tenant_id" in model.__table__.c
 
 
-def test_a_source_is_unique_within_a_tenant() -> None:
-    names = {c.name for c in Document.__table__.constraints}
-    assert "uq_documents_tenant_id_external_id" in names
+def test_a_source_is_unique_within_a_tenant_per_classification() -> None:
+    # Per classification since migration 0012 (EAP-61, ADR-006). Across classifications a
+    # re-post could conflict with a row RLS hides from the caller, and the refused update
+    # told them the restricted document existed.
+    unique = {c.name: c for c in Document.__table__.constraints if isinstance(c, UniqueConstraint)}
+    assert list(unique) == ["uq_documents_tenant_id_classification_external_id"]
+    assert [col.name for col in unique["uq_documents_tenant_id_classification_external_id"].columns] == [
+        "tenant_id",
+        "classification",
+        "external_id",
+    ]

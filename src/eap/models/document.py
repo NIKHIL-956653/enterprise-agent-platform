@@ -49,7 +49,16 @@ class Document(UUIDPk, Timestamps, Base):
         # external_id is the caller's own identifier — a Jira key, a Confluence page id.
         # Unique per tenant so re-ingesting a source replaces it instead of piling up
         # near-duplicates that all match the same query and crowd out everything else.
-        UniqueConstraint("tenant_id", "external_id", name="uq_documents_tenant_id_external_id"),
+        # Per classification since migration 0012 (EAP-61, ADR-006): a re-post then only ever
+        # conflicts with a row at the level being written, which the caller can see, so a
+        # restricted copy of the same id is never in a lower-clearance caller's way - and
+        # never revealed by a refused update.
+        UniqueConstraint(
+            "tenant_id",
+            "classification",
+            "external_id",
+            name="uq_documents_tenant_id_classification_external_id",
+        ),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
