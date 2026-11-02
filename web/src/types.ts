@@ -68,6 +68,15 @@ export type AuditEvent = {
 
 export type RunAudit = { run_id: string; chain_ok: boolean; events: AuditEvent[] };
 
+export type Verdict = "up" | "down";
+
+export type FeedbackResponse = {
+  run_id: string;
+  verdict: Verdict;
+  comment: string | null;
+  created_at: string;
+};
+
 export type DocumentSummary = {
   document_id: string;
   title: string;

@@ -80,6 +80,10 @@ class AgentRun(UUIDPk, Timestamps, Base):
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
         ),
+        # (tenant_id, id) as a key, so feedback can reference a run AND its tenant in one
+        # foreign key (EAP-63, migration 0013). id alone is already unique; this is the
+        # target the composite key needs, nothing more.
+        UniqueConstraint("tenant_id", "id", name="uq_agent_runs_tenant_id_id"),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(

@@ -440,3 +440,30 @@ pre {
   color: var(--text);
   font-weight: 600;
 }
+
+/* ---- answer feedback (EAP-63) ---- */
+.feedback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.feedback button.thumb {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 10px;
+  font-size: 15px;
+  line-height: 1;
+}
+.feedback button.thumb.sel {
+  border-color: var(--accent-dim);
+  background: var(--surface-2);
+}
+.feedback input {
+  min-width: 260px;
+  padding: 6px 10px;
+  font-size: 13px;
+}

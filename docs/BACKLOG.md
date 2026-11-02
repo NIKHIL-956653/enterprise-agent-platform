@@ -387,7 +387,7 @@ on main as ordinary ticket branches, nothing touches the L-series.
 | ID | Title | Status |
 |---|---|---|
 | EAP-62 | Per-student accounts from `demo-docs/{tenant}/students.csv`; credentials file, gitignored | ✅ |
-| EAP-63 | Answer feedback - `feedback` table, `POST /v1/runs/{id}/feedback`, thumbs on the answer card | ⬜ |
+| EAP-63 | Answer feedback - `feedback` table, `POST /v1/runs/{id}/feedback`, thumbs on the answer card | ✅ |
 | EAP-64 | Daily token budget per tenant, counted in Asia/Kolkata, 429 with the reset time | ⬜ |
 | EAP-65 | Ops summary - `GET /v1/ops/summary` for a tenant's admin + `scripts/ops_report.py` for the operator | ⬜ |
 | EAP-66 | Deployment pack - `deploy/compose.prod.yml`, Caddy, `.env.production.example`, `docs/DEPLOY.md` | ⬜ |
@@ -414,6 +414,26 @@ It reads `demo-docs/{tenant}/students.csv` (`name,email`, any column order), cre
 
 Not verified in CI: a run against the real `demo-docs/` folders - the tests use a two-row
 CSV in a temporary directory.
+
+### EAP-63 — how it closed
+Migration `0013`: `feedback(id, tenant_id, run_id, user_id, verdict, comment, created_at)`,
+RLS + FORCE with the same `tenant_isolation` policy as every tenant table, `verdict` held to
+`up`/`down` by a named CHECK (`ck_feedback_verdict`, by hand, as in `0011`), and
+`(run_id, user_id)` unique so a person has one vote per run - `POST /v1/runs/{id}/feedback`
+upserts on it, so a changed mind rewrites the row and resets `created_at`. Two decisions:
+
+- **Whose run it is, nobody checks in Python.** The handler looks the run up with no tenant
+  filter; RLS hides another tenant's run, so the answer is the same 404 as `GET /v1/runs/{id}`,
+  never a 403 that would confirm it exists. `tests/test_feedback.py` asserts status AND body
+  equal those for a run that never existed.
+- **The database refuses a cross-tenant vote on its own.** The foreign key to `agent_runs` is
+  composite, `(tenant_id, run_id)` against a new `(tenant_id, id)` key on `agent_runs`: the
+  RLS `WITH CHECK` pins the row's `tenant_id` to the caller, so a run from another tenant has
+  no parent and the INSERT fails even with the lookup deleted. Tested by inserting as
+  `eap_app` in tenant B's context against A's run, bypassing the endpoint.
+
+The answer card in the admin UI has thumbs; a thumbs down opens an optional one-line comment.
+`web/` is outside CI; `tsc -b` and `vite build` were run by hand, the click path was not.
 
 ---
 
