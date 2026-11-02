@@ -13,7 +13,7 @@ from functools import lru_cache
 import anthropic
 
 from eap.core.config import get_settings
-from eap.llm.base import LLMError
+from eap.llm.base import Completion, LLMError
 from eap.llm.resilience import CircuitBreaker, CircuitOpenError, call_with_retry
 
 # 529 is Anthropic's "overloaded" - transient by definition.
@@ -58,6 +58,9 @@ class AnthropicLLM:
         self._breaker_scope = breaker_scope
 
     async def complete(self, prompt: str, *, max_output_tokens: int = 1024) -> str:
+        return (await self.complete_metered(prompt, max_output_tokens=max_output_tokens)).text
+
+    async def complete_metered(self, prompt: str, *, max_output_tokens: int = 1024) -> Completion:
         s = get_settings()
 
         async def _call():
@@ -90,7 +93,23 @@ class AnthropicLLM:
         text = "".join(parts).strip()
         if not text:
             raise LLMError("model returned no text")
-        return text
+        prompt_tokens, completion_tokens = anthropic_usage(response)
+        return Completion(text=text, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
+
+
+def anthropic_usage(response: object) -> tuple[int, int]:
+    """(input, output) token counts from a Message, 0 when absent. Cache reads and writes
+    are input tokens the request paid for, so they count on the prompt side."""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return 0, 0
+    prompt = (
+        (getattr(usage, "input_tokens", None) or 0)
+        + (getattr(usage, "cache_creation_input_tokens", None) or 0)
+        + (getattr(usage, "cache_read_input_tokens", None) or 0)
+    )
+    completion = getattr(usage, "output_tokens", None) or 0
+    return int(prompt), int(completion)
 
 
 @lru_cache

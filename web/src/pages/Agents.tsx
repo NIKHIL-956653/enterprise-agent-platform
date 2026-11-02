@@ -105,7 +105,13 @@ function RunPanel({ agent }: { agent: AgentSummary }) {
         setFieldErrs(byField);
         setErrors(rest);
       } else if (e instanceof ApiError && e.status === 429)
-        setErrors(["Rate limit reached for this tenant. Wait a minute and retry."]);
+        // Two limits answer 429: requests per minute (a fixed message) and the daily token
+        // budget, whose message says when it resets - so show the API's words when it has any.
+        setErrors([
+          typeof e.detail === "string" && e.detail !== "Rate limit exceeded"
+            ? e.detail
+            : "Rate limit reached for this tenant. Wait a minute and retry.",
+        ]);
       else setErrors([e instanceof Error ? e.message : String(e)]);
       setStatus(null);
     } finally {

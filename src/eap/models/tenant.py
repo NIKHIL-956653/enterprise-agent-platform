@@ -7,13 +7,18 @@ Every tenant-owned table carries tenant_id pointing here, and Postgres RLS filte
 
 import enum
 
-from sqlalchemy import Enum, String, text
+from sqlalchemy import CheckConstraint, Enum, Integer, String, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from eap.i18n import Language
 from eap.models.base import Base
 from eap.models.meta import Timestamps, UUIDPk, language_type
+
+# Enough for a few hundred RAG answers a day (an answer run is a few thousand tokens), and
+# small enough that a runaway loop on a new tenant is a bad afternoon, not a bad month.
+# Migration 0014 writes the same number as the column's server default.
+DEFAULT_DAILY_TOKEN_BUDGET = 500_000
 
 
 class TenantStatus(enum.StrEnum):
@@ -23,6 +28,8 @@ class TenantStatus(enum.StrEnum):
 
 class Tenant(UUIDPk, Timestamps, Base):
     __tablename__ = "tenants"
+
+    __table_args__ = (CheckConstraint("daily_token_budget >= 0", name="daily_token_budget"),)
 
     # Human-facing handle: URLs, logins, support tickets. Lowercase, stable, unique.
     # Users say "acme", never a UUID - but the UUID stays the key everything joins on,
@@ -61,6 +68,14 @@ class Tenant(UUIDPk, Timestamps, Base):
         ARRAY(String(8)),
         default=lambda: [Language.EN.value],
         server_default=text("'{en}'"),
+    )
+
+    # Tokens (prompt + completion, summed over agent_runs) this tenant may spend per calendar
+    # day in settings.token_budget_timezone (EAP-64). Checked before every model call; the
+    # run endpoint answers 429 once it is gone. 0 means no cap - an explicit operator
+    # choice, never the default: a spend control that defaults to off is a bill, not a limit.
+    daily_token_budget: Mapped[int] = mapped_column(
+        Integer, default=DEFAULT_DAILY_TOKEN_BUDGET, server_default=str(DEFAULT_DAILY_TOKEN_BUDGET)
     )
 
     def __repr__(self) -> str:

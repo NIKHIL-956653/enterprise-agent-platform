@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eap.agents import AgentError, get_agent, registered_names
+from eap.core.budget import enforce_daily_token_budget
 from eap.core.config import get_settings
 from eap.core.deps import (
     get_claims,
@@ -121,7 +122,9 @@ async def _await_workflow(handle, timeout_seconds: int, fallback: RunResponse) -
 @router.post(
     "/{name}/run",
     response_model=RunResponse,
-    dependencies=[Depends(enforce_run_rate_limit)],
+    # Order matters: the request limiter is a Redis INCR and refuses a flood cheaply; the
+    # token budget is a database read and only runs for requests that got past it.
+    dependencies=[Depends(enforce_run_rate_limit), Depends(enforce_daily_token_budget)],
 )
 async def run_agent(
     name: str,

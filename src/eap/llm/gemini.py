@@ -14,7 +14,7 @@ from google import genai
 from google.genai import types
 
 from eap.core.config import get_settings
-from eap.llm.base import LLMError
+from eap.llm.base import Completion, LLMError
 from eap.llm.resilience import CircuitBreaker, CircuitOpenError, call_with_retry
 
 _TRANSIENT_CODES = {429, 500, 502, 503, 504}
@@ -70,6 +70,9 @@ class GeminiLLM:
         self._model = model
 
     async def complete(self, prompt: str, *, max_output_tokens: int = 1024) -> str:
+        return (await self.complete_metered(prompt, max_output_tokens=max_output_tokens)).text
+
+    async def complete_metered(self, prompt: str, *, max_output_tokens: int = 1024) -> Completion:
         s = get_settings()
 
         async def _call():
@@ -111,7 +114,26 @@ class GeminiLLM:
             # failure rather than returning "" and letting an empty summary look like
             # success.
             raise LLMError("model returned no text")
-        return text.strip()
+        prompt_tokens, completion_tokens = gemini_usage(response)
+        return Completion(text=text.strip(), prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
+
+
+def gemini_usage(response: object) -> tuple[int, int]:
+    """
+    (prompt, completion) token counts from a generate_content response, 0 when absent.
+
+    Thinking tokens count as output: they are billed as output and the budget is a spend
+    control. getattr throughout, so an SDK that reshapes usage_metadata degrades to zeros
+    (which the runner then tops up with an estimate), never to a crash mid-run.
+    """
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return 0, 0
+    prompt = getattr(usage, "prompt_token_count", None) or 0
+    completion = (getattr(usage, "candidates_token_count", None) or 0) + (
+        getattr(usage, "thoughts_token_count", None) or 0
+    )
+    return int(prompt), int(completion)
 
 
 @lru_cache

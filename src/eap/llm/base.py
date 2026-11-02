@@ -6,6 +6,7 @@ tests run a deterministic fake and lets us swap Gemini for another provider with
 touching a single agent.
 """
 
+from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 
@@ -23,6 +24,36 @@ class LLM(Protocol):
     """Anything that can turn a prompt into text."""
 
     async def complete(self, prompt: str, *, max_output_tokens: int = 1024) -> str: ...
+
+
+@dataclass(frozen=True)
+class Completion:
+    """A model's answer with what it cost: the provider's own token counts (EAP-64)."""
+
+    text: str
+    prompt_tokens: int
+    completion_tokens: int
+
+
+@runtime_checkable
+class MeteredLLM(Protocol):
+    """
+    An LLM that also reports usage. Both real providers do; the runner prefers this method
+    when it exists and falls back to `complete` plus an estimate when it does not, so a
+    test fake that only knows `complete` keeps working - and still gets counted.
+    """
+
+    async def complete_metered(self, prompt: str, *, max_output_tokens: int = 1024) -> Completion: ...
+
+
+# Roughly four characters per token for English prose on every current tokenizer. Only used
+# for a model that reports no usage; the two real providers do. Never zero for a non-empty
+# text, because a budget that counts nothing for an unmetered call is no budget.
+CHARS_PER_TOKEN = 4
+
+
+def estimate_tokens(text: str) -> int:
+    return (len(text) + CHARS_PER_TOKEN - 1) // CHARS_PER_TOKEN if text else 0
 
 
 @runtime_checkable
