@@ -21,3 +21,6 @@ netlify.toml
 
 # Demo material for scripts/ingest_pdfs.py - course PDFs are not ours to publish.
 demo-docs/
+
+# Student logins written by scripts/seed_students.py - never committed, wherever they sit.
+credentials.txt
