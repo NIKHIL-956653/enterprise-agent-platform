@@ -4,6 +4,7 @@ Run history.
 GET /v1/runs         newest first, keyset-paginated, envelope only (no payloads)
 GET /v1/runs/{id}    one run, with input and output
 GET /v1/runs/{id}/audit   the run's audit events, hash chain re-verified (EAP-53)
+POST /v1/runs/{id}/feedback   the caller's thumb on the run, one per person, upserted (EAP-63)
 
 No query here filters by tenant, and none needs to: the session from get_tenant_session
 carries app.tenant_id and RLS does the rest. Another tenant's run id is simply not found.
@@ -11,16 +12,17 @@ carries app.tenant_id and RLS does the rest. Another tenant's run id is simply n
 
 import json
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eap.api import pagination
-from eap.core.deps import get_tenant_session
+from eap.core.deps import get_claims, get_current_tenant_id, get_tenant_session
 from eap.models.agent import Agent, AgentRun, RunStatus
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -196,3 +198,76 @@ async def get_run_audit(
         for r in rows
     ]
     return RunAuditResponse(run_id=run_id, chain_ok=all(e.intact for e in events), events=events)
+
+
+class FeedbackRequest(BaseModel):
+    verdict: Literal["up", "down"]
+    # One line: the box in the UI is one line, and anything longer belongs in a ticket, not
+    # in a column read by an aggregate. Whitespace-only collapses to no comment.
+    comment: str | None = Field(default=None, max_length=500)
+
+
+class FeedbackResponse(BaseModel):
+    run_id: UUID
+    verdict: str
+    comment: str | None
+    created_at: datetime
+
+
+_UPSERT_FEEDBACK = text(
+    """
+    INSERT INTO feedback (id, tenant_id, run_id, user_id, verdict, comment)
+    VALUES (gen_random_uuid(), :tid, :run_id, :uid, :verdict, :comment)
+    ON CONFLICT (run_id, user_id) DO UPDATE
+       SET verdict = EXCLUDED.verdict,
+           comment = EXCLUDED.comment,
+           created_at = now()
+    RETURNING verdict, comment, created_at
+    """
+)
+
+
+@router.post("/{run_id}/feedback", response_model=FeedbackResponse)
+async def give_feedback(
+    run_id: UUID,
+    body: FeedbackRequest,
+    claims: Annotated[dict[str, Any], Depends(get_claims)],
+    tenant_id: Annotated[UUID, Depends(get_current_tenant_id)],
+    session: Annotated[AsyncSession, Depends(get_tenant_session)],
+) -> FeedbackResponse:
+    """
+    Thumbs up or down on a run, one vote per person per run: voting again replaces the
+    earlier vote (and its comment), it never adds a second row.
+
+    Whose run it is never gets checked here, and that is the design, not an omission. The
+    lookup below carries no tenant filter; RLS hides another tenant's run, so it reads as
+    missing - a 404, exactly like GET /v1/runs/{id}, never a 403 that would confirm the
+    run exists. And if this lookup were ever removed, the INSERT would still fail: the
+    feedback row's tenant_id is pinned to the caller's by the RLS WITH CHECK, and the
+    composite foreign key (tenant_id, run_id) needs a run in THAT tenant (migration 0013).
+    """
+    run = await session.get(AgentRun, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "run not found")
+
+    comment = (body.comment or "").strip() or None
+    try:
+        row = (
+            await session.execute(
+                _UPSERT_FEEDBACK,
+                {
+                    "tid": str(tenant_id),
+                    "run_id": str(run_id),
+                    "uid": claims["sub"],
+                    "verdict": body.verdict,
+                    "comment": comment,
+                },
+            )
+        ).one()
+    except IntegrityError as e:
+        # The composite key refused the row: the run is not in the caller's tenant after
+        # all. Same answer as the lookup would have given, for the same reason.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "run not found") from e
+    return FeedbackResponse(
+        run_id=run_id, verdict=row.verdict, comment=row.comment, created_at=row.created_at
+    )

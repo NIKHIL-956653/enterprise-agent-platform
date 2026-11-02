@@ -13,8 +13,10 @@ import {
   TERMINAL_STATUSES,
   type AgentSummary,
   type Citation,
+  type FeedbackResponse,
   type RunDetail,
   type RunEnvelope,
+  type Verdict,
 } from "../types";
 import { AgentForm, splitServerErrors, type FieldErrors } from "../components/AgentForm";
 
@@ -201,6 +203,7 @@ function AgentOutput({ run }: { run: RunDetail }): ReactNode {
             refused instead of inventing an answer.
           </p>
         )}
+        <FeedbackBar runId={run.run_id} />
       </div>
     );
   }
@@ -224,6 +227,86 @@ function AgentOutput({ run }: { run: RunDetail }): ReactNode {
     <div className="card inner">
       <h2>Output</h2>
       <pre>{JSON.stringify(out, null, 2)}</pre>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- feedback (EAP-63)
+//
+// One thumb per person per run; the API upserts, so clicking the other thumb replaces the
+// vote rather than adding one. A thumbs down opens a one-line comment box - optional, sent
+// with the same verdict, so "down, no comment" and "down, because..." are the same row.
+
+function FeedbackBar({ runId }: { runId: string }) {
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const [comment, setComment] = useState("");
+  const [saved, setSaved] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send(v: Verdict, c: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api<FeedbackResponse>(`/v1/runs/${runId}/feedback`, {
+        method: "POST",
+        body: { verdict: v, comment: c.trim() || null },
+      });
+      setVerdict(res.verdict);
+      setSaved(res.verdict === "down" && res.comment ? "Thanks - noted." : "Thanks.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="feedback">
+      <span className="muted">Was this answer helpful?</span>
+      <button
+        type="button"
+        className={`thumb ${verdict === "up" ? "sel" : ""}`}
+        aria-label="Helpful"
+        aria-pressed={verdict === "up"}
+        disabled={busy}
+        onClick={() => void send("up", "")}
+      >
+        👍
+      </button>
+      <button
+        type="button"
+        className={`thumb ${verdict === "down" ? "sel" : ""}`}
+        aria-label="Not helpful"
+        aria-pressed={verdict === "down"}
+        disabled={busy}
+        onClick={() => void send("down", comment)}
+      >
+        👎
+      </button>
+      {verdict === "down" && (
+        <form
+          style={{ display: "flex", gap: 6 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send("down", comment);
+          }}
+        >
+          <input
+            type="text"
+            maxLength={500}
+            placeholder="What was wrong? (optional, one line)"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            disabled={busy}
+          />
+          <button type="submit" className="ghost" disabled={busy}>
+            Send
+          </button>
+        </form>
+      )}
+      {saved && !error && <span className="muted">{saved}</span>}
+      {error && <span className="field-error">{error}</span>}
     </div>
   );
 }

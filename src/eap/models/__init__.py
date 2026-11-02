@@ -12,6 +12,7 @@ from eap.models.agent import Agent, AgentRun, RunStatus
 from eap.models.audit import AuditEvent
 from eap.models.base import Base
 from eap.models.document import Document, DocumentChunk
+from eap.models.feedback import Feedback
 from eap.models.tenant import Tenant, TenantStatus
 from eap.models.user import User, UserRole
 
@@ -22,6 +23,7 @@ __all__ = [
     "Base",
     "Document",
     "DocumentChunk",
+    "Feedback",
     "RunStatus",
     "Tenant",
     "TenantStatus",
