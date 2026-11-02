@@ -388,7 +388,7 @@ on main as ordinary ticket branches, nothing touches the L-series.
 |---|---|---|
 | EAP-62 | Per-student accounts from `demo-docs/{tenant}/students.csv`; credentials file, gitignored | ✅ |
 | EAP-63 | Answer feedback - `feedback` table, `POST /v1/runs/{id}/feedback`, thumbs on the answer card | ✅ |
-| EAP-64 | Daily token budget per tenant, counted in Asia/Kolkata, 429 with the reset time | ⬜ |
+| EAP-64 | Daily token budget per tenant, counted in Asia/Kolkata, 429 with the reset time | ✅ |
 | EAP-65 | Ops summary - `GET /v1/ops/summary` for a tenant's admin + `scripts/ops_report.py` for the operator | ⬜ |
 | EAP-66 | Deployment pack - `deploy/compose.prod.yml`, Caddy, `.env.production.example`, `docs/DEPLOY.md` | ⬜ |
 
@@ -434,6 +434,38 @@ upserts on it, so a changed mind rewrites the row and resets `created_at`. Two d
 
 The answer card in the admin UI has thumbs; a thumbs down opens an optional one-line comment.
 `web/` is outside CI; `tsc -b` and `vite build` were run by hand, the click path was not.
+
+### EAP-64 — how it closed
+Checked first, as asked: EAP-46 counts **requests** per minute in Redis; nothing counted
+tokens. Worse, `agent_runs.prompt_tokens` and `completion_tokens` had never been written -
+the `LLM` Protocol returned text alone, so every run on record says 0. So this ticket is
+two things:
+
+- **Token accounting.** `Completion(text, prompt_tokens, completion_tokens)` and a
+  `MeteredLLM` Protocol (`complete_metered`) next to `LLM`. Gemini and Anthropic implement it
+  from their own usage blocks (thinking tokens count as output; cache tokens as input). The
+  runner's auditing wrapper prefers it and falls back to `complete` plus a 4-chars-per-token
+  estimate - never zero for a non-empty call, because a budget that counts nothing for an
+  unmetered model is no budget. Counts sum onto the run row, flushed after every call, and
+  land in the `llm.call` audit payload with `usage: reported|estimated`. Older test fakes
+  keep working unchanged.
+- **The cap.** `tenants.daily_token_budget` (migration `0014`; default 500,000, CHECK ≥ 0;
+  0 means no cap, an explicit operator choice, never the default). Spend is
+  `SUM(prompt_tokens + completion_tokens)` over the tenant's runs since 00:00 in
+  `settings.token_budget_timezone` (Asia/Kolkata), read under RLS - the runs table is the
+  ledger, no Redis counter to drift from it. Checked in two places: the run endpoint
+  refuses with **429** and a plain message ("…resets at 00:00 IST (in about 6 h 30 min)…")
+  plus `Retry-After`, and the runner asks again before **each** model call, so a run already
+  executing fails with the same words and no model call. The endpoint refuses every run once
+  the budget is gone, echo included: "this college is out of tokens today" is one truth.
+  It fails closed - no visible tenant row reads as exhausted - the opposite of EAP-46,
+  deliberately: that limiter protects availability, this one protects a bill.
+
+`seed_demo.py` gives the three colleges 5,000,000 a day (a ceiling nobody should meet while
+still being a ceiling); `acme` keeps the default. `tests/test_token_budget.py` (16) covers the
+accounting, both providers' usage parsing, the Kolkata day boundary (a run at 23:59 yesterday
+does not count, one at 00:01 does), the 429 and its message, zero, tenant separation, and the
+in-worker refusal through `execute_agent`.
 
 ---
 

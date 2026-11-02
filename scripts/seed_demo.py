@@ -40,8 +40,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from eap.agents import registry
 from eap.core.db import dispose_owner_engine, get_owner_session_factory
 from eap.core.security import hash_password
+from eap.models.tenant import DEFAULT_DAILY_TOKEN_BUDGET
 
 DEV_PASSWORD = "demo-password-123"
+
+# EAP-64. Twenty students asking twenty questions each is well under a million tokens a day
+# (an answer run is a few thousand), so five million is a ceiling nobody should meet while
+# still being a ceiling - a runaway client stops at a bad day, not a bad month. Re-seeding
+# re-asserts it, as it does every other field in these specs.
+PILOT_DAILY_TOKEN_BUDGET = 5_000_000
 
 # Clearance levels, as enforced by the RLS policy from migration 0008.
 PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED = 0, 1, 2, 3
@@ -59,6 +66,7 @@ class TenantSpec:
     slug: str
     name: str
     users: tuple[UserSpec, ...]
+    daily_token_budget: int = DEFAULT_DAILY_TOKEN_BUDGET
 
 
 def _college(slug: str, name: str, suffix: str = "") -> TenantSpec:
@@ -69,6 +77,7 @@ def _college(slug: str, name: str, suffix: str = "") -> TenantSpec:
             UserSpec(f"admin@{slug}.edu", "admin", RESTRICTED),
             UserSpec(f"student@{slug}.edu", "member", INTERNAL),
         ),
+        daily_token_budget=PILOT_DAILY_TOKEN_BUDGET,
     )
 
 
@@ -105,11 +114,12 @@ async def _upsert_tenant(s: AsyncSession, spec: TenantSpec, password_hash: str, 
     tenant_id = (
         await s.execute(
             text(
-                "INSERT INTO tenants (id, slug, name) "
-                "VALUES (gen_random_uuid(), :slug, :name) "
-                "ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name RETURNING id"
+                "INSERT INTO tenants (id, slug, name, daily_token_budget) "
+                "VALUES (gen_random_uuid(), :slug, :name, :budget) "
+                "ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, "
+                "  daily_token_budget = EXCLUDED.daily_token_budget RETURNING id"
             ),
-            {"slug": spec.slug, "name": spec.name},
+            {"slug": spec.slug, "name": spec.name, "budget": spec.daily_token_budget},
         )
     ).scalar_one()
 
@@ -173,11 +183,12 @@ async def main() -> None:
     print(f"password : {'dev default (set DEMO_PASSWORD to change)' if using_default else 'DEMO_PASSWORD'}")
     print(f"agents   : {', '.join(registry.registered_names())}")
     print()
-    print(f"{'tenant':<8} {'name':<22} {'login':<20} {'role':<7} clearance")
+    print(f"{'tenant':<8} {'name':<22} {'login':<20} {'role':<7} {'clearance':<10} tokens/day")
     for spec in DEMO_TENANTS:
         for i, user in enumerate(spec.users):
             slug, name = (spec.slug, spec.name) if i == 0 else ("", "")
-            print(f"{slug:<8} {name:<22} {user.email:<20} {user.role:<7} {user.clearance}")
+            budget = f"{spec.daily_token_budget:,}" if i == 0 else ""
+            print(f"{slug:<8} {name:<22} {user.email:<20} {user.role:<7} {user.clearance:<10} {budget}")
     print()
     print("tenant ids: " + ", ".join(f"{slug}={tid}" for slug, tid in ids.items()))
 

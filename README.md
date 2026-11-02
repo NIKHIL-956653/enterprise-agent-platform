@@ -87,6 +87,9 @@ python scripts/seed_demo.py
 | `bba` | `admin@bba.edu` (admin) · `student@bba.edu` (member) | 3 · 1 |
 
 Every password is `$DEMO_PASSWORD`, or the dev-only default `demo-password-123` when unset.
+Each college gets a daily token budget of 5,000,000 (prompt + completion, per calendar day in
+`TOKEN_BUDGET_TIMEZONE`, Asia/Kolkata by default); once it is spent the run endpoint answers
+429 with the reset time. Change it on the `tenants` row.
 The three colleges are the isolation demo: one college cannot see another's documents, and a
 student (clearance 1) cannot see faculty material classified 2 or 3, nor learn that it exists.
 

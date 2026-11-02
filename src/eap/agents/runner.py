@@ -20,9 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from eap.agents import AgentContext, AgentError, get_agent
 from eap.agents.base import Retriever
 from eap.audit import record
+from eap.core import budget
 from eap.core.config import get_settings
 from eap.core.logging import get_logger
-from eap.llm.base import LLM, LLMError
+from eap.llm.base import LLM, Completion, LLMError, MeteredLLM, estimate_tokens
 from eap.llm.provider import get_llm
 from eap.models.agent import Agent, AgentRun, RunStatus
 from eap.models.tenant import Tenant
@@ -73,19 +74,47 @@ def _bind_retriever(session: AsyncSession) -> Retriever:
 
 class _AuditingLLM:
     """
-    Wraps whatever model the run uses so every call lands in the audit trail. The agent
-    receives this, never the bare model - capture is not something an agent can opt out of.
+    Wraps whatever model the run uses so every call lands in the audit trail, is counted
+    against the tenant's daily token budget, and is refused when that budget is spent. The
+    agent receives this, never the bare model - none of the three is something an agent
+    can opt out of.
     """
 
-    def __init__(self, inner: LLM, session: AsyncSession, tenant_id: UUID, run_id: UUID) -> None:
+    def __init__(self, inner: LLM, session: AsyncSession, run: AgentRun) -> None:
         self._inner = inner
         self._session = session
-        self._tenant_id = tenant_id
-        self._run_id = run_id
+        self._run = run
+        self._tenant_id = run.tenant_id
+        self._run_id = run.id
+
+    async def _call(self, prompt: str, max_output_tokens: int) -> tuple[Completion, str]:
+        """The provider's own counts when it has them, else an estimate - never nothing."""
+        if isinstance(self._inner, MeteredLLM):
+            got = await self._inner.complete_metered(prompt, max_output_tokens=max_output_tokens)
+            if got.prompt_tokens or got.completion_tokens:
+                return got, "reported"
+            text = got.text
+        else:
+            text = await self._inner.complete(prompt, max_output_tokens=max_output_tokens)
+        return (
+            Completion(
+                text=text, prompt_tokens=estimate_tokens(prompt), completion_tokens=estimate_tokens(text)
+            ),
+            "estimated",
+        )
 
     async def complete(self, prompt: str, *, max_output_tokens: int = 1024) -> str:
+        # EAP-64: before the call, not after. The runs table already holds this run's
+        # earlier calls (flushed below), so a long multi-call run stops at the line too.
         try:
-            completion = await self._inner.complete(prompt, max_output_tokens=max_output_tokens)
+            await budget.ensure_within_budget(self._session)
+        except budget.BudgetExhausted as e:
+            # An LLMError, so the run is recorded FAILED with this message and the tenant
+            # reads why - the same path as a provider outage, which to the student it is.
+            raise LLMError(str(e)) from e
+
+        try:
+            completion, usage = await self._call(prompt, max_output_tokens)
         except Exception:
             # The attempted prompt is evidence too - a reviewer reconstructing a failure
             # needs what was ASKED, not only that asking failed.
@@ -97,6 +126,11 @@ class _AuditingLLM:
                 payload={"prompt": prompt},
             )
             raise
+        # Summed onto the run row and flushed at once, so the budget query sees this call
+        # before the next one, in this run or any other.
+        self._run.prompt_tokens += completion.prompt_tokens
+        self._run.completion_tokens += completion.completion_tokens
+        await self._session.flush()
         await record(
             self._session,
             tenant_id=self._tenant_id,
@@ -104,11 +138,14 @@ class _AuditingLLM:
             event_type="llm.call",
             payload={
                 "prompt": prompt,
-                "completion": completion,
+                "completion": completion.text,
                 "max_output_tokens": max_output_tokens,
+                "prompt_tokens": completion.prompt_tokens,
+                "completion_tokens": completion.completion_tokens,
+                "usage": usage,
             },
         )
-        return completion
+        return completion.text
 
 
 def _auditing_retriever(inner: Retriever, session: AsyncSession, tenant_id: UUID, run_id: UUID) -> Retriever:
@@ -205,7 +242,7 @@ async def execute_agent(
         config=agent_row.config or {},
         # Explicitly injected (tests) beats resolved (production) - and either way the
         # agent gets the AUDITING wrapper, so a test fake is captured like the real model.
-        llm=_AuditingLLM(base_llm, session, tenant_id, run.id) if base_llm is not None else None,
+        llm=_AuditingLLM(base_llm, session, run) if base_llm is not None else None,
         retriever=_auditing_retriever(base_retriever, session, tenant_id, run.id),
     )
     timeout = get_settings().agent_run_timeout_seconds

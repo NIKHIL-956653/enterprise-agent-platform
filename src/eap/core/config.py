@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     # while every tenant is a demo tenant.
     rate_limit_runs_per_minute: int = 60
 
+    # Daily token budget (EAP-64). The budget itself is per tenant, on the tenants row
+    # (daily_token_budget); this names the day. Spend is counted per calendar day in this
+    # zone, because "today" is a question about where the users are, not where the server
+    # is - a UTC midnight would reset the pilot's budget at 05:30 in the afternoon class.
+    token_budget_timezone: str = "Asia/Kolkata"
+
     # LLM APIs (used from M2)
     google_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
