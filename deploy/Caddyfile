@@ -1,0 +1,42 @@
+# Caddy in front of the pilot (EAP-66): HTTPS from Let's Encrypt for {$DOMAIN}, the built
+# admin UI as static files, and /v1 (plus the probes and API docs) proxied to the API.
+#
+# One origin for UI and API on purpose. The UI is built with VITE_API_BASE empty, so it
+# fetches /v1/... from the page's own origin and the browser never makes a cross-origin
+# request. CORS_ALLOW_ORIGINS must still name https://{$DOMAIN} - the API refuses to boot in
+# prod with the localhost default - and it is the only origin that needs to be there.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Everything the API serves. The health probes are here so `curl https://DOMAIN/readyz`
+	# is the verification step in docs/DEPLOY.md; the docs are behind the same TLS as the
+	# rest and need a token for anything but reading the schema.
+	@api path /v1/* /livez /readyz /docs /openapi.json
+	handle @api {
+		reverse_proxy api:8000
+	}
+
+	# The React app. try_files sends every unknown path to index.html so client-side routes
+	# (/runs/<id>, /ops) survive a reload; the assets have hashed names and may be cached.
+	handle {
+		root * /srv/web
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

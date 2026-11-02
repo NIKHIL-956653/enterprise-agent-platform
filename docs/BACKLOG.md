@@ -390,7 +390,7 @@ on main as ordinary ticket branches, nothing touches the L-series.
 | EAP-63 | Answer feedback - `feedback` table, `POST /v1/runs/{id}/feedback`, thumbs on the answer card | ✅ |
 | EAP-64 | Daily token budget per tenant, counted in Asia/Kolkata, 429 with the reset time | ✅ |
 | EAP-65 | Ops summary - `GET /v1/ops/summary` for a tenant's admin + `scripts/ops_report.py` for the operator | ⬜ |
-| EAP-66 | Deployment pack - `deploy/compose.prod.yml`, Caddy, `.env.production.example`, `docs/DEPLOY.md` | ⬜ |
+| EAP-66 | Deployment pack - `deploy/compose.prod.yml`, Caddy, `.env.production.example`, `docs/DEPLOY.md` | 🔨 |
 
 ### EAP-62 — how it closed
 `scripts/seed_students.py`, a sibling of `seed_demo.py` rather than a flag on it: the demo
