@@ -120,6 +120,42 @@ async def test_filters_by_agent_and_status(client) -> None:
     assert len((await client.get("/v1/runs", params={"status": "failed"}, headers=h)).json()["items"]) == 0
 
 
+async def test_every_run_records_its_language(client) -> None:
+    """EAP-L4: the language is decided from the input at submission and stored on the row."""
+    h = await _headers(client)
+    english = await _echo(client, h, "hello there, how are you")
+    arabic = await _echo(client, h, "مرحبا، كيف حالك اليوم")
+
+    assert (await client.get(f"/v1/runs/{english}", headers=h)).json()["language"] == "en"
+    assert (await client.get(f"/v1/runs/{arabic}", headers=h)).json()["language"] == "ar"
+
+
+async def test_a_run_with_no_language_signal_takes_the_tenant_default(client) -> None:
+    """ "ok" is one word; the tenant decides, and a fresh tenant's default is English."""
+    h = await _headers(client)
+    run_id = await _echo(client, h, "ok")
+    assert (await client.get(f"/v1/runs/{run_id}", headers=h)).json()["language"] == "en"
+
+
+async def test_filters_by_language(client) -> None:
+    h = await _headers(client)
+    await _echo(client, h, "hello there, how are you")
+    arabic = await _echo(client, h, "مرحبا، كيف حالك اليوم")
+
+    items = (await client.get("/v1/runs", params={"language": "ar"}, headers=h)).json()["items"]
+    assert [i["run_id"] for i in items] == [arabic]
+    assert len((await client.get("/v1/runs", params={"language": "en"}, headers=h)).json()["items"]) == 1
+    assert all(
+        i["language"] in ("en", "ar") for i in (await client.get("/v1/runs", headers=h)).json()["items"]
+    )
+
+
+async def test_an_unknown_language_filter_is_422(client) -> None:
+    """?language=fr is refused at the door, never answered with an empty page."""
+    h = await _headers(client)
+    assert (await client.get("/v1/runs", params={"language": "fr"}, headers=h)).status_code == 422
+
+
 async def test_naive_before_is_rejected(client) -> None:
     h = await _headers(client)
     r = await client.get("/v1/runs", params={"before": "2026-01-01T00:00:00"}, headers=h)

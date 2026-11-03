@@ -224,7 +224,7 @@ Ids: v2 has its own series - M6 EAP-L1→L6 · M7 L7→L15 · M8 L16→L21 · M9
 | EAP-L1 | Language detection — `Language` enum, deterministic Unicode-script `detect()`, confidence flag | ✅ |
 | EAP-L2 | Migration `0011` — language on tenants, users, agent_runs, document_chunks + CHECK constraints | ✅ |
 | EAP-L3 | Locale formatting — digits per tenant, AED both languages, Asia/Dubai datetimes, bidi isolates | ✅ |
-| EAP-L4 | Runner records `language` on every run; `GET /v1/runs?language=` | ⬜ |
+| EAP-L4 | Runner records `language` on every run; `GET /v1/runs?language=` | ✅ |
 | EAP-L5 | Arabic-aware chunking — ؟ and ؛ end sentences, ، does not; per-chunk language tag | ⬜ |
 | EAP-L6 | ADR-005 "i18n as data, not branches" + catalogue `{en,ar}.yaml` with a key-parity test | ⬜ |
 
@@ -248,6 +248,14 @@ Western by default, which is CLDR's own default for ar-AE, Arabic-Indic as an op
 per-tenant column arrives with its first consumer, EAP-L12. Money is `int` or `Decimal` only,
 and fils are never rounded away. `tzdata` is now a declared dependency: Windows has no time
 zone database of its own, and the venv only had it by accident (via optional extras).
+
+EAP-L4 decides a run's language once, at submission, from every string in the input payload
+joined - no agent names a "language field", so a new agent is covered the day it registers.
+No confident signal ("ok", a bare number, an empty payload) means the tenant's
+`default_language`, so the column always holds a real language and `?language=` has no
+"unknown" bucket. The filter is typed as the enum, so `?language=fr` is a 422 at the door.
+Migration `0015` adds `(tenant_id, language, created_at DESC)` so a filtered page is the
+same single range scan as an unfiltered one.
 
 ---
 

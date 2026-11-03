@@ -23,6 +23,7 @@ from eap.audit import record
 from eap.core import budget
 from eap.core.config import get_settings
 from eap.core.logging import get_logger
+from eap.i18n import language_of
 from eap.llm.base import LLM, Completion, LLMError, MeteredLLM, estimate_tokens
 from eap.llm.provider import get_llm
 from eap.models.agent import Agent, AgentRun, RunStatus
@@ -210,12 +211,14 @@ async def execute_agent(
         run.status = RunStatus.RUNNING
         await session.flush()
     else:
+        tenant = await session.get(Tenant, tenant_id)
         run = AgentRun(
             tenant_id=tenant_id,
             agent_id=agent_row.id,
             triggered_by=user_id,
             status=RunStatus.RUNNING,
             input=payload,
+            language=language_of(payload, default=tenant.default_language),
         )
         session.add(run)
         await session.flush()  # assigns run.id without ending the transaction

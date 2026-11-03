@@ -27,10 +27,13 @@ export type AgentSummary = {
   input_schema: JsonSchema | null;
 };
 
+export type Language = "en" | "ar";
+
 export type RunEnvelope = {
   run_id: string;
   agent: string;
   status: string;
+  language: Language;
   output: Record<string, unknown> | null;
   error: string | null;
   latency_ms: number | null;
@@ -42,6 +45,7 @@ export type RunSummary = {
   run_id: string;
   agent: string;
   status: string;
+  language: Language;
   error: string | null;
   latency_ms: number | null;
   prompt_tokens: number;
