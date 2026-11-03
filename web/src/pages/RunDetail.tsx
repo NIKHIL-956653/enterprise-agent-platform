@@ -45,7 +45,8 @@ export function RunDetailPage() {
     <div className="stack">
       <div className="card">
         <h2>
-          {run.agent} <span className={`pill ${run.status}`}>{run.status}</span>
+          {run.agent} <span className={`pill ${run.status}`}>{run.status}</span>{" "}
+          <span className="mono muted">{run.language}</span>
         </h2>
         <div className="kv">
           <span>

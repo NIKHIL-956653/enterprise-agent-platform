@@ -30,7 +30,9 @@ from eap.core.deps import (
 )
 from eap.core.ratelimit import enforce_run_rate_limit
 from eap.core.temporal import get_temporal_client
+from eap.i18n import Language, language_of
 from eap.models.agent import Agent, AgentRun, RunStatus
+from eap.models.tenant import Tenant
 from eap.workflows import AgentRunRequest, AgentRunWorkflow
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -52,6 +54,7 @@ class RunResponse(BaseModel):
     run_id: UUID
     agent: str
     status: str
+    language: Language
     output: dict[str, Any] | None
     error: str | None
     latency_ms: int | None
@@ -88,6 +91,7 @@ def _envelope_from_row(run: AgentRun, agent: str) -> RunResponse:
         run_id=run.id,
         agent=agent,
         status=run.status.value,
+        language=run.language,
         output=run.output,
         error=run.error,
         latency_ms=run.latency_ms,
@@ -111,6 +115,7 @@ async def _await_workflow(handle, timeout_seconds: int, fallback: RunResponse) -
         run_id=UUID(result.run_id),
         agent=fallback.agent,
         status=result.status,
+        language=fallback.language,
         output=result.output,
         error=result.error,
         latency_ms=result.latency_ms,
@@ -176,6 +181,9 @@ async def run_agent(
             handle = client.get_workflow_handle_for(AgentRunWorkflow.run, str(existing.id))
             return await _await_workflow(handle, wait_budget, envelope)
 
+    # Decided once, here, from the input as submitted - the worker and every later reader
+    # take it from the row. The tenant row is RLS-scoped to the caller's own tenant.
+    tenant = await session.get(Tenant, tenant_id)
     run = AgentRun(
         tenant_id=tenant_id,
         agent_id=agent_row.id,
@@ -183,6 +191,7 @@ async def run_agent(
         status=RunStatus.QUEUED,
         input=payload,
         idempotency_key=idempotency_key,
+        language=language_of(payload, default=tenant.default_language),
     )
     session.add(run)
     try:

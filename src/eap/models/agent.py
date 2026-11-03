@@ -73,6 +73,14 @@ class AgentRun(UUIDPk, Timestamps, Base):
         # Run history is always "this tenant, newest first". tenant_id must lead the index
         # or RLS filters millions of rows before the sort can help.
         Index("ix_agent_runs_tenant_id_created_at", "tenant_id", text("created_at DESC")),
+        # ?language= walks the same keyset as the unfiltered list, so it gets the same shape
+        # of index with language between tenant and time (migration 0015).
+        Index(
+            "ix_agent_runs_tenant_id_language_created_at",
+            "tenant_id",
+            "language",
+            text("created_at DESC"),
+        ),
         Index(
             "uq_agent_runs_tenant_idempotency",
             "tenant_id",

@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from eap.api import pagination
 from eap.core.deps import get_claims, get_current_tenant_id, get_tenant_session
+from eap.i18n import Language
 from eap.models.agent import Agent, AgentRun, RunStatus
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -32,6 +33,7 @@ class RunSummary(BaseModel):
     run_id: UUID
     agent: str
     status: str
+    language: Language
     error: str | None
     latency_ms: int | None
     prompt_tokens: int
@@ -57,6 +59,7 @@ def _summary(run: AgentRun, agent_name: str) -> RunSummary:
         run_id=run.id,
         agent=agent_name,
         status=run.status.value,
+        language=run.language,
         error=run.error,
         latency_ms=run.latency_ms,
         prompt_tokens=run.prompt_tokens,
@@ -72,6 +75,8 @@ async def list_runs(
     before: Annotated[str | None, Query()] = None,
     agent: Annotated[str | None, Query()] = None,
     run_status: Annotated[RunStatus | None, Query(alias="status")] = None,
+    # Typed as the enum, so ?language=fr is a 422 at the door, never a silent empty page.
+    language: Annotated[Language | None, Query()] = None,
 ) -> RunPage:
     """
     Keyset pagination: "everything older than the last thing you saw". Every page hits the
@@ -92,6 +97,8 @@ async def list_runs(
         stmt = stmt.where(Agent.name == agent)
     if run_status is not None:
         stmt = stmt.where(AgentRun.status == run_status)
+    if language is not None:
+        stmt = stmt.where(AgentRun.language == language)
 
     rows = (await session.execute(stmt)).all()
     has_more = len(rows) > limit

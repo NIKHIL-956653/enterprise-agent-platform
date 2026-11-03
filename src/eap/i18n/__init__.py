@@ -19,6 +19,7 @@ from eap.i18n.format import (
     isolate,
 )
 from eap.i18n.language import DEFAULT_LANGUAGE, Detection, Language
+from eap.i18n.payload import language_of
 
 __all__ = [
     "DEFAULT_LANGUAGE",
@@ -32,4 +33,5 @@ __all__ = [
     "format_datetime",
     "format_number",
     "isolate",
+    "language_of",
 ]

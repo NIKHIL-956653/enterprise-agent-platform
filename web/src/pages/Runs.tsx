@@ -10,6 +10,8 @@ import type { AgentSummary, RunPage, RunSummary } from "../types";
 import { fmtTime } from "../util";
 
 const STATUSES = ["", "queued", "running", "succeeded", "failed", "timed_out"];
+// The codes the API accepts (eap.i18n.Language); labels are for the dropdown only.
+const LANGUAGES: [string, string][] = [["", "all"], ["en", "English"], ["ar", "Arabic"]];
 
 export function Runs() {
   const [items, setItems] = useState<RunSummary[]>([]);
@@ -17,6 +19,7 @@ export function Runs() {
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [agent, setAgent] = useState("");
   const [status, setStatus] = useState("");
+  const [language, setLanguage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -29,6 +32,7 @@ export function Runs() {
         const params = new URLSearchParams({ limit: "20" });
         if (agent) params.set("agent", agent);
         if (status) params.set("status", status);
+        if (language) params.set("language", language);
         if (before) params.set("before", before);
         const page = await api<RunPage>(`/v1/runs?${params}`);
         setItems((prev) => (before ? [...prev, ...page.items] : page.items));
@@ -39,7 +43,7 @@ export function Runs() {
         setBusy(false);
       }
     },
-    [agent, status],
+    [agent, status, language],
   );
 
   useEffect(() => {
@@ -76,6 +80,16 @@ export function Runs() {
             ))}
           </select>
         </label>
+        <label>
+          Language
+          <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+            {LANGUAGES.map(([code, label]) => (
+              <option key={code} value={code}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {error && <div className="error">{error}</div>}
@@ -87,6 +101,7 @@ export function Runs() {
               <th>When</th>
               <th>Agent</th>
               <th>Status</th>
+              <th>Lang</th>
               <th>Latency</th>
               <th>Run</th>
             </tr>
@@ -99,13 +114,14 @@ export function Runs() {
                 <td>
                   <span className={`pill ${r.status}`}>{r.status}</span>
                 </td>
+                <td className="mono muted">{r.language}</td>
                 <td className="muted">{r.latency_ms !== null ? `${r.latency_ms} ms` : "—"}</td>
                 <td className="mono muted">{r.run_id.slice(0, 8)}…</td>
               </tr>
             ))}
             {items.length === 0 && !busy && (
               <tr>
-                <td colSpan={5} className="muted">
+                <td colSpan={6} className="muted">
                   No runs yet. Run an agent from the Agents tab.
                 </td>
               </tr>
