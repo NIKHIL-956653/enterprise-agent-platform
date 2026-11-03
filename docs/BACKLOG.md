@@ -223,7 +223,7 @@ Ids: v2 has its own series - M6 EAP-L1→L6 · M7 L7→L15 · M8 L16→L21 · M9
 |---|---|---|
 | EAP-L1 | Language detection — `Language` enum, deterministic Unicode-script `detect()`, confidence flag | ✅ |
 | EAP-L2 | Migration `0011` — language on tenants, users, agent_runs, document_chunks + CHECK constraints | ✅ |
-| EAP-L3 | Locale formatting — digits per tenant, AED both languages, Asia/Dubai datetimes, bidi isolates | ⬜ |
+| EAP-L3 | Locale formatting — digits per tenant, AED both languages, Asia/Dubai datetimes, bidi isolates | ✅ |
 | EAP-L4 | Runner records `language` on every run; `GET /v1/runs?language=` | ⬜ |
 | EAP-L5 | Arabic-aware chunking — ؟ and ؛ end sentences, ، does not; per-chunk language tag | ⬜ |
 | EAP-L6 | ADR-005 "i18n as data, not branches" + catalogue `{en,ar}.yaml` with a key-parity test | ⬜ |
@@ -239,6 +239,15 @@ so `tenants.status`, `users.role` and `agent_runs.status` are validated in Pytho
 SQL can write any string. The fix is a separate v1.0.x ticket, not part of M6.
 `tests/test_language_columns.py` asserts the five new CHECKs exist by name, so the language
 columns cannot quietly fall into the same state.
+
+EAP-L3 landed as a rules table of our own rather than Babel. The data is CLDR's - every month,
+weekday, AM/PM marker and separator was checked against it - but the patterns are how UAE
+listings read ("AED 2,500,000", "2,500,000 درهم"), and no formatter emits hidden direction
+marks: `isolate()` is the only source of those. The digit system is a per-call argument -
+Western by default, which is CLDR's own default for ar-AE, Arabic-Indic as an opt-in - and the
+per-tenant column arrives with its first consumer, EAP-L12. Money is `int` or `Decimal` only,
+and fils are never rounded away. `tzdata` is now a declared dependency: Windows has no time
+zone database of its own, and the venv only had it by accident (via optional extras).
 
 ---
 
