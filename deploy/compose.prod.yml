@@ -1,0 +1,151 @@
+# Production stack for one VPS (EAP-66). Every service docker-compose.yml runs locally, plus
+# the API, the Temporal worker and Caddy in front. Read docs/DEPLOY.md first; it is the
+# runbook this file is the second half of.
+#
+#   docker compose --env-file .env.production -f deploy/compose.prod.yml up -d --build
+#
+# Nothing in this file is a value. Every secret and every host-specific setting comes from
+# .env.production (copy .env.production.example), which is gitignored. Only Caddy publishes
+# ports: Postgres, Redis, Temporal and the API are reachable on the compose network alone.
+
+name: eap
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: eap
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: eap
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # pgvector's distance scans and Temporal's own two databases share this instance; the
+    # image default of 64MB shared memory is too small for either under load.
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eap -d eap"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Rate-limit counters only (EAP-46); nothing here is the system of record, so no
+    # persistence - a restart means one free minute, not lost data.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Temporal (EAP-43). auto-setup creates `temporal` and `temporal_visibility` inside the
+  # same Postgres, exactly as in dev and CI. It is a single-process convenience image, not a
+  # Temporal cluster: fine for a pilot of twenty students, not for a second region.
+  temporal:
+    image: temporalio/auto-setup:1.24.2
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: eap
+      POSTGRES_PWD: ${POSTGRES_PASSWORD}
+      POSTGRES_SEEDS: postgres
+    # No published port. The API and the worker reach it as temporal:7233.
+
+  # Workflow history per run, for debugging. Not published: reach it over an SSH tunnel
+  # (`ssh -L 8233:localhost:8233 <vps>` after uncommenting the ports line below), never
+  # over the internet - the UI has no login of its own.
+  temporal-ui:
+    image: temporalio/ui:2.26.2
+    restart: unless-stopped
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    # ports:
+    #   - "127.0.0.1:8233:8080"
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: eap-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    env_file:
+      - ../.env.production
+    environment:
+      # Service names on the compose network. These three are fixed by this file; the
+      # passwords inside them are not - they come from .env.production.
+      DATABASE_URL: postgresql+asyncpg://eap:${POSTGRES_PASSWORD}@postgres:5432/eap
+      APP_DATABASE_URL: postgresql+asyncpg://eap_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env.production}@postgres:5432/eap
+      REDIS_URL: redis://redis:6379/0
+      TEMPORAL_ADDRESS: temporal:7233
+    # Caddy terminates TLS and forwards X-Forwarded-*; uvicorn must trust it or every
+    # request logs as coming from the proxy.
+    command:
+      ["uvicorn", "eap.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    volumes:
+      # The operator's PDFs and student rosters, and where seed_students.py writes
+      # credentials.txt. Host path, so the files stay on the VPS and never in an image.
+      - ../demo-docs:/app/demo-docs
+    healthcheck:
+      # slim image, no curl. /livez touches nothing - that is the point of a liveness probe.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/livez', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    image: eap-api
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - ../.env.production
+    environment:
+      DATABASE_URL: postgresql+asyncpg://eap:${POSTGRES_PASSWORD}@postgres:5432/eap
+      APP_DATABASE_URL: postgresql+asyncpg://eap_app:${APP_DB_PASSWORD}@postgres:5432/eap
+      REDIS_URL: redis://redis:6379/0
+      TEMPORAL_ADDRESS: temporal:7233
+    command: ["python", "-m", "eap.worker"]
+
+  caddy:
+    build:
+      context: ..
+      dockerfile: deploy/caddy.Dockerfile
+    image: eap-caddy
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env.production}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      # Certificates and Caddy's own state. Lose this volume and Caddy re-issues on the
+      # next start - fine, but Let's Encrypt rate limits exist, so keep it.
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

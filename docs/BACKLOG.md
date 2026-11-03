@@ -390,7 +390,7 @@ on main as ordinary ticket branches, nothing touches the L-series.
 | EAP-63 | Answer feedback - `feedback` table, `POST /v1/runs/{id}/feedback`, thumbs on the answer card | ✅ |
 | EAP-64 | Daily token budget per tenant, counted in Asia/Kolkata, 429 with the reset time | ✅ |
 | EAP-65 | Ops summary - `GET /v1/ops/summary` for a tenant's admin + `scripts/ops_report.py` for the operator | ✅ |
-| EAP-66 | Deployment pack - `deploy/compose.prod.yml`, Caddy, `.env.production.example`, `docs/DEPLOY.md` | ⬜ |
+| EAP-66 | Deployment pack - `deploy/compose.prod.yml`, Caddy, `.env.production.example`, `docs/DEPLOY.md` | 🔨 |
 
 ### EAP-62 — how it closed
 `scripts/seed_students.py`, a sibling of `seed_demo.py` rather than a flag on it: the demo
@@ -492,6 +492,26 @@ uses, so "today" means one thing on the Ops tab and in a 429. Rates are `null`, 
 the denominator is 0. `tests/test_ops_summary.py` (14) builds a known history (7 runs, 1
 error, 2 refusals, 125 tokens, 1/1 thumbs) and checks every number through both callers,
 plus the window arithmetic and a run at 23:55 IST landing on yesterday's bar.
+
+### EAP-66 — the deployment pack (PR open, left for review before it is followed)
+`deploy/compose.prod.yml` runs every service the local compose runs - Postgres+pgvector,
+Redis, Temporal auto-setup, Temporal UI (unpublished) - plus the API, the worker and Caddy.
+Only Caddy publishes ports; it terminates HTTPS for `$DOMAIN`, serves the built `web/` as
+static files and proxies `/v1`, the probes and `/docs` to the API on the same origin
+(`deploy/Caddyfile`, validated with `caddy validate`). `deploy/caddy.Dockerfile` builds the
+UI with `VITE_API_BASE` empty, so no hostname is baked into the bundle. The API image now
+carries `alembic/`, `alembic.ini` and `scripts/` (plus the `scripts` extra), so migrations,
+seeds, ingest and the ops report run as one-off containers from the image the API runs; a
+`.dockerignore` keeps `.env*`, `demo-docs/` and `node_modules` out of every layer.
+`.env.production.example` names every setting and holds no values; `.env.production` is
+gitignored. `docs/DEPLOY.md` is the runbook: provision, DNS, clone, env, up, migrate, seed,
+ingest, verify `/readyz`, each with a "done when"; then a one-line nightly `pg_dump` cron,
+the restore, day-to-day operations, and what is logged about students' questions and what
+the colleges must be told. Nothing in the pack is a real hostname, key or password; the
+only hostnames are `example.edu` placeholders. Not verified: an actual `docker compose up`
+(no Docker daemon in the environment the pack was written in) - the compose file was parsed
+and the Caddyfile validated, nothing more. Follow the runbook once on a scratch VPS before
+the pilot's.
 
 ---
 
