@@ -21,17 +21,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from eap.core.deps import get_claims, get_tenant_session
-from eap.models.user import UserRole
+from eap.core.deps import get_claims, get_tenant_session, is_admin
 from eap.ops import MAX_DAYS, OpsSummary, summarize
 
 router = APIRouter(prefix="/ops", tags=["ops"])
 
-_ADMIN_ROLES = {UserRole.ADMIN.value, UserRole.OWNER.value}
-
 
 async def require_admin(claims: Annotated[dict[str, Any], Depends(get_claims)]) -> None:
-    if claims.get("role") not in _ADMIN_ROLES:
+    if not is_admin(claims):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "admins only")
 
 

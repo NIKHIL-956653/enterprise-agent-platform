@@ -17,12 +17,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, text
+from sqlalchemy import select, text, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eap.api import pagination
-from eap.core.deps import get_claims, get_current_tenant_id, get_tenant_session
+from eap.core.deps import get_claims, get_current_tenant_id, get_tenant_session, is_admin
 from eap.i18n import Language
 from eap.models.agent import Agent, AgentRun, RunStatus
 
@@ -68,9 +68,26 @@ def _summary(run: AgentRun, agent_name: str) -> RunSummary:
     )
 
 
+def _visible_to(claims: dict[str, Any]):
+    """
+    The rows this caller may see (EAP-67).
+
+    Tenant isolation is RLS: the session carries app.tenant_id and another tenant's runs do
+    not exist here. Isolation BETWEEN USERS of one tenant is applied in the query, here,
+    until EAP-68 moves it into the agent_runs policy. A member sees only the runs they
+    triggered; an admin or owner sees the tenant. A run with no triggered_by (started before
+    the column existed, or by a script) belongs to the tenant, so admins only. Another
+    member's run is a 404 from every endpoint below, exactly like a run that never existed.
+    """
+    if is_admin(claims):
+        return true()
+    return AgentRun.triggered_by == UUID(claims["sub"])
+
+
 @router.get("", response_model=RunPage)
 async def list_runs(
     session: Annotated[AsyncSession, Depends(get_tenant_session)],
+    claims: Annotated[dict[str, Any], Depends(get_claims)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     before: Annotated[str | None, Query()] = None,
     agent: Annotated[str | None, Query()] = None,
@@ -90,6 +107,7 @@ async def list_runs(
         .join(Agent, Agent.id == AgentRun.agent_id)
         .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
         .limit(limit + 1)  # one extra row tells us whether a next page exists
+        .where(_visible_to(claims))
     )
     if cursor is not None:
         stmt = stmt.where(pagination.older_than(cursor, AgentRun.created_at, AgentRun.id))
@@ -114,12 +132,13 @@ async def list_runs(
 async def get_run(
     run_id: UUID,
     session: Annotated[AsyncSession, Depends(get_tenant_session)],
+    claims: Annotated[dict[str, Any], Depends(get_claims)],
 ) -> RunDetail:
     row = (
         await session.execute(
             select(AgentRun, Agent.name)
             .join(Agent, Agent.id == AgentRun.agent_id)
-            .where(AgentRun.id == run_id)
+            .where(AgentRun.id == run_id, _visible_to(claims))
         )
     ).first()
     if row is None:
@@ -178,6 +197,7 @@ _AUDIT_VERIFY = text(
 async def get_run_audit(
     run_id: UUID,
     session: Annotated[AsyncSession, Depends(get_tenant_session)],
+    claims: Annotated[dict[str, Any], Depends(get_claims)],
 ) -> RunAuditResponse:
     """
     The run's audit trail, re-verified on every read.
@@ -187,7 +207,9 @@ async def get_run_audit(
     false `intact` means someone with owner access edited history - which is exactly the
     event this table exists to make detectable.
     """
-    run = await session.get(AgentRun, run_id)
+    run = (
+        await session.execute(select(AgentRun.id).where(AgentRun.id == run_id, _visible_to(claims)))
+    ).scalar_one_or_none()
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "run not found")
 
@@ -246,14 +268,17 @@ async def give_feedback(
     Thumbs up or down on a run, one vote per person per run: voting again replaces the
     earlier vote (and its comment), it never adds a second row.
 
-    Whose run it is never gets checked here, and that is the design, not an omission. The
-    lookup below carries no tenant filter; RLS hides another tenant's run, so it reads as
-    missing - a 404, exactly like GET /v1/runs/{id}, never a 403 that would confirm the
-    run exists. And if this lookup were ever removed, the INSERT would still fail: the
-    feedback row's tenant_id is pinned to the caller's by the RLS WITH CHECK, and the
-    composite foreign key (tenant_id, run_id) needs a run in THAT tenant (migration 0013).
+    The lookup below carries no tenant filter; RLS hides another tenant's run, so it reads
+    as missing - a 404, exactly like GET /v1/runs/{id}, never a 403 that would confirm the
+    run exists. Within the tenant it is scoped like every read here (EAP-67): a member can
+    vote only on their own runs, an admin on any. And if this lookup were ever removed, the
+    INSERT would still fail across tenants: the feedback row's tenant_id is pinned to the
+    caller's by the RLS WITH CHECK, and the composite foreign key (tenant_id, run_id) needs
+    a run in THAT tenant (migration 0013).
     """
-    run = await session.get(AgentRun, run_id)
+    run = (
+        await session.execute(select(AgentRun.id).where(AgentRun.id == run_id, _visible_to(claims)))
+    ).scalar_one_or_none()
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "run not found")
 
