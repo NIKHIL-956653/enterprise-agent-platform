@@ -78,15 +78,21 @@ As `eap`:
 ```bash
 sudo mkdir -p /opt/eap && sudo chown eap:eap /opt/eap
 git clone <REPO_URL> /opt/eap          # the repository's HTTPS clone URL
-cd /opt/eap && git checkout v1.0.0   # or the commit you have tested; main moves
+cd /opt/eap && git checkout v1.1.0   # the pilot release - a frozen build; main moves on
 mkdir -p demo-docs/engg demo-docs/mba demo-docs/bba
 ```
+
+The pilot runs **v1.1.0** and nothing else. `main` keeps moving - the Arabic work (EAP-L5
+onwards) lands there during the pilot - and must never be deployed to this box mid-flight.
+A fix the pilot needs is a new tag, `v1.1.1`, cut on purpose: see "Ship a fix" under
+Day-to-day. `git pull` has no place on the pilot box.
 
 `demo-docs/` is bind-mounted into the API container for the PDFs, the student rosters and
 the credentials files the seed writes. It is gitignored. Create it now, as `eap`, so Docker
 does not create it as root.
 
-**Done when:** `ls /opt/eap/deploy` shows `compose.prod.yml`, `Caddyfile`, `caddy.Dockerfile`.
+**Done when:** `git describe --tags --exact-match` prints `v1.1.0`, and `ls /opt/eap/deploy`
+shows `compose.prod.yml`, `Caddyfile`, `caddy.Dockerfile`.
 
 ## 4. Env
 
@@ -272,8 +278,13 @@ A backup that has never been restored is a hope.
 ## Day-to-day
 
 - **Logs:** `dc logs -f api worker` (JSON lines; every line carries a `request_id`).
-- **Update:** `git pull`, then `dc up -d --build`, then `dc run --rm api alembic upgrade head`.
-  Caddy and Postgres keep their volumes; the API and worker are rebuilt.
+- **Ship a fix during the pilot:** never `git pull`, and never deploy `main`. Cut the fix on
+  a branch from `v1.1.0` (or cherry-pick a reviewed commit from main), get CI green, then tag
+  it deliberately - `git tag -a v1.1.1 -m "pilot fix: <what>"`, `git push origin v1.1.1` -
+  and on the box: `git fetch --tags && git checkout v1.1.1`, `dc up -d --build`,
+  `dc run --rm api alembic upgrade head`. Caddy and Postgres keep their volumes; the API,
+  worker and Caddy images are rebuilt. The next fix is `v1.1.2`; the pilot box only ever
+  moves between tags you chose.
 - **Rotate the app DB password:** `dc exec postgres psql -U eap -d eap -c "ALTER ROLE eap_app PASSWORD '<new>'"`,
   edit `APP_DB_PASSWORD`, `dc up -d api worker`.
 - **A college's budget:** `dc exec postgres psql -U eap -d eap -c "UPDATE tenants SET daily_token_budget = <n> WHERE slug = '<slug>'"`.
