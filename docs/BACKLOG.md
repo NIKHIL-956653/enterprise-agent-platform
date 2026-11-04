@@ -683,7 +683,7 @@ embedding money unbounded. Fix: per-IP and per-account counters on login, a per-
 counter on ingest, all on EAP-46's Redis fixed window.
 
 ### EAP-70 — Vulnerable frontend dependencies, and audit gates in CI
-**Type:** security · **Status:** 🔨 in progress · **Audit item:** 20
+**Type:** security · **Status:** ✅ done · **Audit item:** 20
 
 `react-router-dom 6.30.1` carried five high advisories (open redirects; latent here because
 the app never navigates to user input) and `vite 5.4.11` a dozen dev-server ones. Fix:
