@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from eap.api import pagination
 from eap.core.deps import get_current_tenant_id, get_tenant_session
+from eap.core.ratelimit import enforce_document_rate_limit
 from eap.llm.base import LLMError
 from eap.models.document import Document, DocumentChunk
 from eap.rag.ingest import EmptyDocument, ingest_document
@@ -46,7 +47,12 @@ class IngestResponse(BaseModel):
     chunk_count: int
 
 
-@router.post("", response_model=IngestResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=IngestResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(enforce_document_rate_limit)],
+)
 async def create_document(
     payload: IngestRequest,
     tenant_id: Annotated[UUID, Depends(get_current_tenant_id)],

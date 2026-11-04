@@ -104,8 +104,10 @@ def _comparable(r: Response, posted_id: str) -> dict:
     assert body.pop("external_id") == posted_id
     assert uuid.UUID(body.pop("document_id"))  # generated, and a real uuid
     # date and x-request-id are generated per response by the server and the request-id
-    # middleware; everything else, content-length included, must agree.
-    headers = {k.lower(): v for k, v in r.headers.items() if k.lower() not in ("date", "x-request-id")}
+    # middleware, and x-ratelimit-remaining counts down by one between any two consecutive
+    # calls (EAP-69); everything else, content-length included, must agree.
+    generated = ("date", "x-request-id", "x-ratelimit-remaining")
+    headers = {k.lower(): v for k, v in r.headers.items() if k.lower() not in generated}
     return {"status": r.status_code, "headers": headers, "body": body}
 
 

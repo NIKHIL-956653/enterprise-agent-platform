@@ -55,6 +55,15 @@ class Settings(BaseSettings):
     # Per-tenant overrides belong on the tenant row later; one global default is enough
     # while every tenant is a demo tenant.
     rate_limit_runs_per_minute: int = 60
+    # Document ingest (EAP-69): per tenant, per minute. Each call is an embedding bill, and
+    # the daily token budget covers runs only. 60 is one a second sustained - the PDF script
+    # posts about one every two seconds, so a whole course library fits under it.
+    rate_limit_documents_per_minute: int = 60
+    # Login (EAP-69). Per (tenant, email): a targeted guess gets ten argon2 verifications a
+    # minute. Per source IP: looser, because a college sits behind one NAT; it exists to stop
+    # one password being sprayed across every account from one place. 0 disables either.
+    rate_limit_login_per_account_per_minute: int = 10
+    rate_limit_login_per_ip_per_minute: int = 300
 
     # Daily token budget (EAP-64). The budget itself is per tenant, on the tenants row
     # (daily_token_budget); this names the day. Spend is counted per calendar day in this

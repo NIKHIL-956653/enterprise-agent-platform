@@ -1,7 +1,11 @@
 """
-Per-tenant request rate limiting.
+Request rate limiting: a fixed window counted in Redis, keyed by a caller-specific key and
+the window index.
 
-A fixed window counted in Redis, keyed by tenant and by window index.
+Three enforcers share the counter (EAP-46, EAP-69): runs per tenant, document ingests per
+tenant, and login attempts per source IP and per (tenant, email). Login is the odd one out -
+it runs BEFORE any token exists, so it is called from the handler with the request's own
+fields rather than resolved as a dependency.
 
 It is a DEPENDENCY, not middleware. The tenant only exists once the bearer token has been
 verified, and middleware runs before that — so a middleware limiter would have to decode the
@@ -25,7 +29,7 @@ from typing import Annotated
 from uuid import UUID
 
 import structlog
-from fastapi import Depends, HTTPException, Response, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from redis.exceptions import RedisError
 
 from eap.core.config import get_settings
@@ -37,10 +41,10 @@ log = structlog.get_logger(__name__)
 WINDOW_SECONDS = 60
 
 
-async def _hit(tenant_id: UUID) -> int:
-    """Count this request and return the running total for the current window."""
+async def _hit(key: str) -> int:
+    """Count this request under `key` and return the running total for the current window."""
     window = int(time.time()) // WINDOW_SECONDS
-    key = f"rl:runs:{tenant_id}:{window}"
+    key = f"{key}:{window}"
 
     # MULTI/EXEC, so the counter can never be incremented without also being given a TTL.
     # A bare INCR whose EXPIRE is lost to a crash leaves an immortal key — which is a tenant
@@ -55,46 +59,83 @@ async def _hit(tenant_id: UUID) -> int:
     return int(count)
 
 
-async def enforce_run_rate_limit(
-    response: Response,
-    tenant_id: Annotated[UUID, Depends(get_current_tenant_id)],
-) -> None:
+async def _enforce(key: str, limit: int, response: Response | None, *, what: str) -> None:
     """
-    Reject a tenant that has exceeded its per-minute budget for this endpoint.
+    Count one request under `key` and refuse it with 429 once `limit` is exceeded.
 
-    Counting happens before the work, not after: the point is to refuse cheaply.
+    Counting happens before the work, not after: the point is to refuse cheaply. With a
+    Response, the X-RateLimit headers are set on it; login passes None, so a failed login
+    says nothing about how many more tries the attacker has.
     """
-    limit = get_settings().rate_limit_runs_per_minute
     if limit <= 0:
         # 0 disables it. Explicit rather than clever, so a test or a local box can turn it off
         # without monkeypatching the module.
         return
 
     try:
-        count = await _hit(tenant_id)
+        count = await _hit(key)
     except RedisError as exc:
         # FAIL OPEN, deliberately. This limiter protects availability; refusing every request
         # because Redis is unreachable converts a cache outage into a total outage. Logged at
         # warning so the gap is visible rather than silent.
         #
-        # The per-tenant COST cap (EAP-49) is the opposite call: that is a spend control, and a
+        # The per-tenant COST cap (EAP-64) is the opposite call: that is a spend control, and a
         # spend control that fails open is how you discover a bill instead of a limit.
-        log.warning("rate_limit_unavailable", tenant_id=str(tenant_id), error=str(exc))
+        log.warning("rate_limit_unavailable", limiter=what, error=str(exc))
         return
 
-    response.headers["X-RateLimit-Limit"] = str(limit)
-    response.headers["X-RateLimit-Remaining"] = str(max(limit - count, 0))
+    if response is not None:
+        response.headers["X-RateLimit-Limit"] = str(limit)
+        response.headers["X-RateLimit-Remaining"] = str(max(limit - count, 0))
 
     if count > limit:
         # Seconds until this window rolls over — a real number, not a fixed guess, so a polite
         # client waits exactly as long as it has to.
         retry_after = WINDOW_SECONDS - int(time.time()) % WINDOW_SECONDS
+        headers = {"Retry-After": str(retry_after)}
+        if response is not None:
+            headers.update({"X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": "0"})
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Rate limit exceeded",
-            headers={
-                "Retry-After": str(retry_after),
-                "X-RateLimit-Limit": str(limit),
-                "X-RateLimit-Remaining": "0",
-            },
+            headers=headers,
         )
+
+
+async def enforce_run_rate_limit(
+    response: Response,
+    tenant_id: Annotated[UUID, Depends(get_current_tenant_id)],
+) -> None:
+    """Runs per tenant per minute (EAP-46)."""
+    await _enforce(f"rl:runs:{tenant_id}", get_settings().rate_limit_runs_per_minute, response, what="runs")
+
+
+async def enforce_document_rate_limit(
+    response: Response,
+    tenant_id: Annotated[UUID, Depends(get_current_tenant_id)],
+) -> None:
+    """Document ingests per tenant per minute (EAP-69): every call spends embedding money."""
+    await _enforce(
+        f"rl:docs:{tenant_id}", get_settings().rate_limit_documents_per_minute, response, what="documents"
+    )
+
+
+async def enforce_login_rate_limit(request: Request, tenant_slug: str, email: str) -> None:
+    """
+    Login attempts per source IP and per (tenant, email), per minute (EAP-69).
+
+    Two keys on purpose. The account key stops a targeted guess at one user - ten tries a
+    minute against argon2 is nothing to a person and everything to a dictionary. The IP key
+    stops spraying one password across many accounts from one place; it is the looser of
+    the two because a whole college can sit behind one NAT. Behind Caddy the IP is the real
+    client's: uvicorn runs with --proxy-headers, and only Caddy can reach the API port
+    (docs/BACKLOG.md, EAP-74). Every attempt counts, successful or not; a person does not
+    log in ten times a minute, a script does.
+    """
+    s = get_settings()
+    ip = request.client.host if request.client is not None else "unknown"
+    await _enforce(f"rl:login:ip:{ip}", s.rate_limit_login_per_ip_per_minute, None, what="login-ip")
+    account = f"{tenant_slug.strip().lower()}:{email.strip().lower()}"
+    await _enforce(
+        f"rl:login:acct:{account}", s.rate_limit_login_per_account_per_minute, None, what="login-account"
+    )
