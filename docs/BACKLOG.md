@@ -735,3 +735,14 @@ exchanges it for the access token, and a second step on the Login screen.
   never published: the only thing that can reach `api:8000` is Caddy on the compose network,
   and Caddy writes that header itself, from the real connection. If the API is ever exposed
   directly, or a second proxy is added, replace `*` with Caddy's address.
+
+---
+
+## Releases
+
+- **v1.0.0** - 2026-10-22, the English release (`89f8246`).
+- **v1.1.0** - 2026-11-04, the pilot release: main after the demo-readiness sprint (D1-D8),
+  EAP-37/38/61, the i18n foundation EAP-L1-L4, the pilot features EAP-62-66 and the security
+  audit fixes EAP-67, 69, 70 and 71. The pilot runs this tag and nothing else; a fix during
+  the pilot is tagged `v1.1.1` deliberately (docs/DEPLOY.md, "Ship a fix"), never deployed
+  from main, so the pilot cannot inherit EAP-L5 onwards mid-flight.
