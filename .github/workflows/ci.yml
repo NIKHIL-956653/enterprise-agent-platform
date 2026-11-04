@@ -80,6 +80,29 @@ jobs:
       - name: Format check
         run: ruff format --check .
 
+      # EAP-70: a dependency with a known vulnerability fails the build before it can merge.
+      # Only what ships is gated for web/ (--omit=dev); dev-server advisories do not reach
+      # the deployed bundle, though they are still bumped when they appear.
+      - name: Dependency audit (Python)
+        run: |
+          pip install pip-audit
+          pip-audit --progress-spinner off
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # web/ was outside CI until now: this is also the first time the admin console is
+      # type-checked and built on every PR.
+      - name: Web build and dependency audit
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+          npm audit --omit=dev --audit-level=high
+
       # Schema must be built by migrations, never by create_all(). If a migration is
       # broken or missing, CI fails here rather than in prod.
       - name: Migrate

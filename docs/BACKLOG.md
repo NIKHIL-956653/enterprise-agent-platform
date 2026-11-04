@@ -683,12 +683,16 @@ embedding money unbounded. Fix: per-IP and per-account counters on login, a per-
 counter on ingest, all on EAP-46's Redis fixed window.
 
 ### EAP-70 — Vulnerable frontend dependencies, and audit gates in CI
-**Type:** security · **Status:** 🔨 in progress · **Audit item:** 20
+**Type:** security · **Status:** ✅ done · **Audit item:** 20
 
 `react-router-dom 6.30.1` carried five high advisories (open redirects; latent here because
 the app never navigates to user input) and `vite 5.4.11` a dozen dev-server ones. Fix:
 `6.30.6` and `5.4.21`, and CI gains `pip-audit` plus `npm audit --omit=dev
---audit-level=high` so the next one is caught before merge.
+--audit-level=high` so the next one is caught before merge. Residual, on the record: the 6.x
+line still carries one *moderate* react-router advisory (open redirect via a backslash path
+in `<Link>`/`useNavigate`, fixed only in react-router 7) - unreachable here because every
+navigation target is a literal route or a server-issued UUID - and vite 5.x keeps one *high*
+dev-server-only advisory fixed only in vite 8. Both are major bumps for after the pilot.
 
 ### EAP-71 — The demo seed must refuse its dev password in production
 **Type:** security · **Status:** 🔨 in progress · **Audit item:** 15
