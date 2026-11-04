@@ -695,7 +695,7 @@ navigation target is a literal route or a server-issued UUID - and vite 5.x keep
 dev-server-only advisory fixed only in vite 8. Both are major bumps for after the pilot.
 
 ### EAP-71 — The demo seed must refuse its dev password in production
-**Type:** security · **Status:** 🔨 in progress · **Audit item:** 15
+**Type:** security · **Status:** ✅ done · **Audit item:** 15
 
 `seed_demo.py` fell back to `demo-password-123` with no environment guard, so one forgotten
 variable would have seeded every college admin with a public password. Fix: refuse when
