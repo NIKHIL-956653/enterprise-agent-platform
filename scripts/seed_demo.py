@@ -30,6 +30,7 @@ so it cannot run under the restricted role that every request uses.
 
 import asyncio
 import os
+import sys
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -38,6 +39,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eap.agents import registry
+from eap.core.config import get_settings
 from eap.core.db import dispose_owner_engine, get_owner_session_factory
 from eap.core.security import hash_password
 from eap.models.tenant import DEFAULT_DAILY_TOKEN_BUDGET
@@ -103,6 +105,22 @@ ACME = TenantSpec(
 DEMO_TENANTS: tuple[TenantSpec, ...] = (ACME, *college_tenants())
 
 
+def check_seed_password(password: str) -> None:
+    """
+    The dev default is public: it is in this file, the README and .env.example. Seeding a
+    production database with it would hand every college admin the same published password
+    (EAP-71). In production that is refused outright; anywhere else it is said out loud.
+    """
+    if password != DEV_PASSWORD:
+        return
+    if get_settings().is_prod:
+        raise SystemExit(
+            "seed_demo: DEMO_PASSWORD is unset and APP_ENV=prod - refusing to seed every admin "
+            "with the public dev password. Set DEMO_PASSWORD and run again."
+        )
+    print("seed_demo: using the dev default password (set DEMO_PASSWORD to override)", file=sys.stderr)
+
+
 def demo_password() -> str:
     # Same lookup order as the per-tenant secrets (eap.llm.secrets): process environment,
     # then .env, then the dev default. `or` rather than a .get default, so an exported but
@@ -164,7 +182,9 @@ async def seed(
     """Upsert every tenant, its users and every registered agent. Returns slug -> tenant id."""
     # One hash for every user: argon2id is deliberately slow, and the salt makes the same
     # hash safe to reuse - it is still a valid argon2 hash of the same password.
-    password_hash = hash_password(password or demo_password())
+    password = password or demo_password()
+    check_seed_password(password)
+    password_hash = hash_password(password)
     # Enabled agents come from the registry, not a list kept here (EAP-39).
     agents = registry.registered_names()
     ids: dict[str, UUID] = {}

@@ -691,7 +691,7 @@ the app never navigates to user input) and `vite 5.4.11` a dozen dev-server ones
 --audit-level=high` so the next one is caught before merge.
 
 ### EAP-71 — The demo seed must refuse its dev password in production
-**Type:** security · **Status:** 🔨 in progress · **Audit item:** 15
+**Type:** security · **Status:** ✅ done · **Audit item:** 15
 
 `seed_demo.py` fell back to `demo-password-123` with no environment guard, so one forgotten
 variable would have seeded every college admin with a public password. Fix: refuse when
