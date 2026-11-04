@@ -95,3 +95,12 @@ async def get_tenant_session(
         except Exception:
             await session.rollback()
             raise
+
+
+# The roles that see a whole tenant rather than their own rows (EAP-67). Literal strings on
+# purpose: this module is imported by the models' consumers, so it must not import models.
+ADMIN_ROLES = frozenset({"admin", "owner"})
+
+
+def is_admin(claims: dict[str, Any]) -> bool:
+    return claims.get("role") in ADMIN_ROLES

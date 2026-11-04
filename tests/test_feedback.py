@@ -138,6 +138,15 @@ async def test_one_vote_per_person_per_run_is_upserted_on_change(client: AsyncCl
 
 async def test_two_people_can_each_vote_once_on_the_same_run(client: AsyncClient) -> None:
     seed = await _seed_tenant(users=2)
+    # Since EAP-67 a member sees - and can vote on - only their own runs, so the second
+    # voter here is an admin: the two people who CAN both see one run. The property under
+    # test is unchanged: one vote per person, re-voting replaces.
+    async with get_owner_session_factory()() as s:
+        await s.execute(
+            text("UPDATE users SET role = 'admin' WHERE tenant_id = :tid AND email = :email"),
+            {"tid": seed["tenant_id"], "email": seed["emails"][1]},
+        )
+        await s.commit()
     h1, h2 = await _headers(client, seed, 0), await _headers(client, seed, 1)
     run_id = await _echo(client, h1)
 

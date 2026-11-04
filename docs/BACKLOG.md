@@ -658,7 +658,7 @@ removed in #48 is an empty 89-byte header. Each failing item has its own ticket 
 line, so the fixes land - and can be reverted - one PR at a time.
 
 ### EAP-67 — Members of a tenant could read each other's runs
-**Type:** security (privacy) · **Status:** 🔨 in progress · **Audit item:** 6
+**Type:** security (privacy) · **Status:** ✅ done · **Audit item:** 6
 
 `GET /v1/runs`, `/{id}` and `/{id}/audit` filtered by tenant only, so any member could read
 any other member's question, prompt and answer. Fix: members see only the runs they
