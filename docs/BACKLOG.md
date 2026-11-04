@@ -4,7 +4,7 @@ Every commit references a ticket id. Tickets are closed by a merged PR, not by b
 
 Status: `✅ done` · `🔨 in progress` · `⬜ todo` · `⏸️ deferred` · `➡️ superseded`
 
-Last updated: 2026-11-02, pilot readiness (EAP-62→66) opened; EAP-61 merged.
+Last updated: 2026-11-04, security audit recorded (EAP-67→74).
 
 ---
 
@@ -543,6 +543,7 @@ missed. None is demo-blocking; two are security-relevant. Recorded 2026-11-01.
 | EAP-59 | Per-tenant provider keys are plaintext at rest in the only secret backend | Dev/demo backend by design; a KMS or Vault backend is a milestone, not a ticket |
 | EAP-60 | Branch protection on `main` does not require the CI check to pass | Repo setting, no code; red PRs #25–#35 merged because of it |
 | EAP-61 | `POST /v1/documents` is an existence oracle for restricted `external_id`s | ✅ closed by ADR-006 + migration `0012` |
+| EAP-72 | Access token lives in `localStorage` until the session cookie lands | Deferred past the pilot; design kept in the audit section below |
 
 ### EAP-58 — Vector retrieval has no index
 **Type:** scaling · **Status:** ⬜ todo
@@ -645,3 +646,88 @@ identical in status, headers and body apart from generated ids; their own re-pos
 replaces; an admin's re-post at a new level still moves the document. Consequence, on the
 record: one `external_id` can exist at several classifications within a tenant. The
 downgrade is reversible only while that has not happened, and fails loudly otherwise.
+
+---
+
+## Security audit — 2026-11-04
+
+Twenty-point checklist run against main at `f2ae2ef` with file:line evidence: 10 pass,
+4 not applicable (no cookies, no uploads, no user-supplied URLs, no webhooks), 6 fail. The
+git history (141 commits) holds no secret and no `.env`; the `dump.rdb` committed in #47 and
+removed in #48 is an empty 89-byte header. Each failing item has its own ticket and status
+line, so the fixes land - and can be reverted - one PR at a time.
+
+### EAP-67 — Members of a tenant could read each other's runs
+**Type:** security (privacy) · **Status:** 🔨 in progress · **Audit item:** 6
+
+`GET /v1/runs`, `/{id}` and `/{id}/audit` filtered by tenant only, so any member could read
+any other member's question, prompt and answer. Fix: members see only the runs they
+triggered (`agent_runs.triggered_by`); admins and owners see the tenant; another member's
+run is 404, never 403. **On the record:** tenant isolation lives in RLS, user isolation
+lives in the application layer until EAP-68 - two mechanisms for one promise.
+
+### EAP-68 — Move user isolation of runs into RLS
+**Type:** security · **Status:** ⬜ todo
+
+Carry `app.user_id` and `app.role` into the session context beside tenant and clearance,
+and add `(role in admin/owner OR triggered_by = app.user_id)` to the `agent_runs` policy,
+with `audit_log` following through `run_id`. EAP-67's query filter then becomes belt and
+braces rather than the only guard, and the feedback upsert inherits it for free.
+
+### EAP-69 — Rate limits on login and document ingest
+**Type:** security · **Status:** 🔨 in progress · **Audit item:** 7
+
+Runs were limited (EAP-46) and budgeted (EAP-64); login was not - argon2 runs per attempt,
+so an attacker gets both brute force and CPU exhaustion for free - and ingest spent
+embedding money unbounded. Fix: per-IP and per-account counters on login, a per-tenant
+counter on ingest, all on EAP-46's Redis fixed window.
+
+### EAP-70 — Vulnerable frontend dependencies, and audit gates in CI
+**Type:** security · **Status:** 🔨 in progress · **Audit item:** 20
+
+`react-router-dom 6.30.1` carried five high advisories (open redirects; latent here because
+the app never navigates to user input) and `vite 5.4.11` a dozen dev-server ones. Fix:
+`6.30.6` and `5.4.21`, and CI gains `pip-audit` plus `npm audit --omit=dev
+--audit-level=high` so the next one is caught before merge.
+
+### EAP-71 — The demo seed must refuse its dev password in production
+**Type:** security · **Status:** 🔨 in progress · **Audit item:** 15
+
+`seed_demo.py` fell back to `demo-password-123` with no environment guard, so one forgotten
+variable would have seeded every college admin with a public password. Fix: refuse when
+`APP_ENV=prod`, warn otherwise.
+
+### EAP-72 — Session cookie instead of localStorage (deferred to after the pilot)
+**Type:** security · **Status:** ⏸️ deferred · **Audit item:** 14
+
+The JWT sits in `localStorage` (`web/src/api.ts`), so any XSS exfiltrates a 30-minute token.
+The right fix rewires auth, CORS, the UI and the scripts, which is the wrong risk to take days
+before a pilot. Design, kept intact for afterwards: login sets `eap_session` with `HttpOnly;
+Secure; SameSite=Strict; Path=/`; `get_claims` accepts the cookie OR a bearer token (the
+scripts keep bearer); `POST /v1/auth/logout` clears it; CORS `allow_credentials=True` with the
+explicit origin list; a cookie-authenticated state-changing request whose `Origin` is not on
+that list is 403 (the CSRF guard that cookies make necessary; audit item 3); the UI uses
+`credentials: "include"` and drops `localStorage`. Tests: cookie flags on login, a
+foreign-`Origin` request is 403, bearer still works, scripts unchanged.
+
+### EAP-73 — MFA for admins and owners
+**Type:** security · **Status:** ⏸️ deferred · **Audit item:** 9
+
+Not for a twenty-student pilot. When it is: TOTP (pyotp) for `admin`/`owner` - enrol and
+confirm endpoints, login returns a short-lived `mfa_token` for enrolled users, a verify step
+exchanges it for the access token, and a second step on the Login screen.
+
+### EAP-74 — Hardening notes, no code
+**Type:** hardening · **Status:** ⬜ todo
+
+- `eap_app` holds `UPDATE/DELETE` on `alembic_version`, `tenants`, `users` and `agents`
+  through `0005`'s default privileges; the app needs none of them. `audit_log` is correctly
+  `INSERT,SELECT` only. Revoke the rest the next time a migration is opened anyway.
+- The client-supplied `x-request-id` is echoed into logs uncapped (`core/middleware.py`).
+  structlog JSON-escapes it, so it cannot inject, but cap it at 64 characters.
+- `--forwarded-allow-ips "*"` in `deploy/compose.prod.yml` tells uvicorn to trust
+  `X-Forwarded-For` from any source, which in general lets a client spoof the IP that the
+  login rate limiter keys on. It is acceptable here, and only here, because the API port is
+  never published: the only thing that can reach `api:8000` is Caddy on the compose network,
+  and Caddy writes that header itself, from the real connection. If the API is ever exposed
+  directly, or a second proxy is added, replace `*` with Caddy's address.
