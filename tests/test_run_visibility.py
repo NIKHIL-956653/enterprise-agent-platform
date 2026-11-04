@@ -107,7 +107,9 @@ async def test_the_404_matches_a_run_that_never_existed(client: AsyncClient) -> 
 
 async def test_an_admin_sees_the_whole_tenant(client: AsyncClient) -> None:
     slug = await _tenant()
-    ha, hb, hadmin = (await _headers(client, slug, e) for e in (A, B, ADMIN))
+    ha = await _headers(client, slug, A)
+    hb = await _headers(client, slug, B)
+    hadmin = await _headers(client, slug, ADMIN)
     run_a = await _echo(client, ha, "a's question")
     run_b = await _echo(client, hb, "b's question")
 
