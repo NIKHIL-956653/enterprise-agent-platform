@@ -675,7 +675,7 @@ with `audit_log` following through `run_id`. EAP-67's query filter then becomes 
 braces rather than the only guard, and the feedback upsert inherits it for free.
 
 ### EAP-69 — Rate limits on login and document ingest
-**Type:** security · **Status:** 🔨 in progress · **Audit item:** 7
+**Type:** security · **Status:** ✅ done · **Audit item:** 7
 
 Runs were limited (EAP-46) and budgeted (EAP-64); login was not - argon2 runs per attempt,
 so an attacker gets both brute force and CPU exhaustion for free - and ingest spent

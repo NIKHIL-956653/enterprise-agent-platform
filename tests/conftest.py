@@ -94,6 +94,10 @@ def _test_env(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -
         monkeypatch.setenv("GOOGLE_API_KEY", "")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "")
         monkeypatch.setattr(tenant_secrets, "_dotenv", lambda: {})
+    # Every test's requests arrive from the same client address, so the per-IP login limiter
+    # would count the whole suite as one attacker. Off here; test_login_rate_limit turns it on
+    # with a client address of its own.
+    monkeypatch.setenv("RATE_LIMIT_LOGIN_PER_IP_PER_MINUTE", "0")
     reset_readiness_cache()
     get_settings.cache_clear()
     yield

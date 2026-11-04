@@ -8,7 +8,7 @@ tenant - the same person may hold accounts at two customer organisations.
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from eap.core.db import get_session
 from eap.core.deps import get_claims, get_tenant_session
 from eap.core.jwt import create_access_token
+from eap.core.ratelimit import enforce_login_rate_limit
 from eap.core.security import verify_password
 from eap.models.tenant import Tenant
 from eap.models.user import User
@@ -54,8 +55,12 @@ _INVALID = HTTPException(
 @router.post("/login", response_model=TokenResponse)
 async def login(
     body: LoginRequest,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> TokenResponse:
+    # Before the tenant lookup and long before argon2: a refused attempt must cost nothing.
+    await enforce_login_rate_limit(request, body.tenant_slug, body.email)
+
     # Step 1: resolve the tenant. SECURITY DEFINER function, because the RLS policy on
     # tenants needs app.tenant_id and we do not have it yet (migration 0004).
     result = await session.execute(text("SELECT tenant_id_for_slug(:slug)"), {"slug": body.tenant_slug})
